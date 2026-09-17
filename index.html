@@ -14,13 +14,13 @@
     <div class="app-title"><span class="dot"></span>Mind Map Studio</div>
     <button class="search-trigger" id="searchTrigger" title="Search (Shift+F)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
-      <span>Search</span><kbd>\u21e7F</kbd>
+      <span>Search</span><kbd>⇧F</kbd>
     </button>
     <div id="listWrap" style="flex:1;display:flex;flex-direction:column;min-height:0;">
       <div id="favWrap" style="display:none;">
         <div class="fav-head" id="favHead" title="Your pinned pages, across every notebook">
           <svg class="fav-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m6 9 6 6 6-6"/></svg>
-          <span class="fav-star">\u2605</span>
+          <span class="fav-star">★</span>
           <span class="fav-label">Favorites</span>
           <span class="fav-count" id="favCount">0</span>
         </div>
@@ -59,24 +59,24 @@
         <b>Notebooks &amp; pages</b><br>
         Pages live inside notebooks, like OneNote. Click a notebook to
         collapse it, the <b>+</b> on its row to add a page, the pencil to
-        rename, the <b>\u00d7</b> to delete. <b>+ Notebook</b> adds a new one.<br>
+        rename, the <b>×</b> to delete. <b>+ Notebook</b> adds a new one.<br>
         <b>Reorder</b> pages by dragging them up or down; drag onto another
-        notebook to move them there. Right-click a page (or use its <b>\u22ef</b>
+        notebook to move them there. Right-click a page (or use its <b>⋯</b>
         button) to <b>pin</b> it to the top, rename, <b>duplicate the whole
         page</b>, or delete. Pinned pages show a star and can still be reordered
         among themselves.<br>
-        <b>Favorites</b> \u2014 pinned pages also collect in a Favorites strip at
+        <b>Favorites</b> — pinned pages also collect in a Favorites strip at
         the top of the sidebar, pulling together starred pages from every
         notebook for quick access. It only appears once you've pinned something,
         and collapses to a single row if you want it out of the way.<br><br>
         <b>Copy between pages</b><br>
         Select blocks, <kbd>Ctrl</kbd>+<kbd>C</kbd>, switch to any page, then
-        <kbd>Ctrl</kbd>+<kbd>V</kbd> \u2014 the blocks and the connections between
+        <kbd>Ctrl</kbd>+<kbd>V</kbd> — the blocks and the connections between
         them come along.<br><br>
         <b>Search</b><br>
-        <kbd>\u21e7F</kbd> (Shift+F) or the Search button opens the search box
+        <kbd>⇧F</kbd> (Shift+F) or the Search button opens the search box
         as a pop-up, so your notebooks stay visible underneath. Narrow it with
-        the scope chips \u2014 all notebooks, the current notebook, or just this
+        the scope chips — all notebooks, the current notebook, or just this
         page. Matches are highlighted; <kbd>Enter</kbd> jumps to the top hit,
         <kbd>Esc</kbd> closes.<br><br>
         <b>Custom blocks</b><br>
@@ -88,7 +88,7 @@
         &mdash; pick a header colour and width, and drag fields to reorder. A
         live preview updates as you go. List and Week have special repeating
         rows, so they're shown locked.<br><br>
-        <b>Repeating rows</b> \u2014 set a field's type to \u201cRepeating rows\u201d
+        <b>Repeating rows</b> — set a field's type to “Repeating rows”
         to get an appendable group, like steps + description. Define the columns
         each row should have, choose whether they sit <b>stacked</b> or
         <b>side by side</b>, and drag the column handles to reorder them. On the
@@ -115,7 +115,7 @@
         automatically. <kbd>Ctrl</kbd>+click any link to open it.<br><br>
         <b>Connecting</b><br>
         Drag the dot on a box's edge onto another box.<br>
-        Drop on <b>empty canvas</b> to open a picker \u2014 type to filter, <kbd>Enter</kbd>
+        Drop on <b>empty canvas</b> to open a picker — type to filter, <kbd>Enter</kbd>
         picks the top match, and the new box appears already connected.<br>
         Each <b>list item</b> has its own dot, so you can branch a hierarchy off any line.<br>
         Double-click a line to label it.<br><br>
@@ -204,9 +204,9 @@
 
 <div class="picker-overlay" id="pickerOverlay">
   <div class="picker-modal" id="pickerModal">
-    <input id="pickerInput" placeholder="Pick a block\u2026 (type to filter)" autocomplete="off">
+    <input id="pickerInput" placeholder="Pick a block… (type to filter)" autocomplete="off">
     <div class="picker-list" id="pickerList"></div>
-    <div class="picker-hint"><kbd>\u2191\u2193</kbd> move \u00b7 <kbd>Enter</kbd> select \u00b7 <kbd>Esc</kbd> cancel</div>
+    <div class="picker-hint"><kbd>↑↓</kbd> move · <kbd>Enter</kbd> select · <kbd>Esc</kbd> cancel</div>
   </div>
 </div>
 
