@@ -1,0 +1,15 @@
+{
+  "name": "mindmap-studio",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Mind Map Studio - notebooks, pages, and a block-based mind-mapping canvas.",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "jsdom": "^26.1.0",
+    "vitest": "^3.2.7"
+  }
+}
