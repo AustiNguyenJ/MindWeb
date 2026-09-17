@@ -26,17 +26,59 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, resolve } from "node:path";
 import { JSDOM, ResourceLoader, VirtualConsole } from "jsdom";
+import { build } from "esbuild";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const ROOT = resolve(HERE, "..");
 
-/** Serves local files, refuses anything remote (fonts + the Supabase CDN),
- *  so the suite never touches the network and stays deterministic. */
+/** Serves local files, refuses anything remote (the web fonts), so the suite
+ *  never touches the network and stays deterministic. Entries in `overrides`
+ *  are served from memory instead of from disk. */
 class LocalOnlyLoader extends ResourceLoader {
+  constructor(overrides = {}) {
+    super();
+    this.overrides = overrides;
+  }
   fetch(url, options) {
     if (/^https?:/i.test(url)) return null;
+    for (const [suffix, provider] of Object.entries(this.overrides)) {
+      if (url.endsWith(suffix)) {
+        return Promise.resolve(provider()).then((text) => Buffer.from(text, "utf8"));
+      }
+    }
     return super.fetch(url, options);
   }
+}
+
+/* jsdom cannot execute <script type="module">, so the module entry is bundled
+ * into a classic IIFE with esbuild and served to jsdom in place of the real
+ * file. Tests therefore exercise the actual module graph while still getting
+ * a fresh JSDOM per test.
+ *
+ * Supabase is deliberately configured as absent: the env values are defined
+ * empty, so no client is constructed and the suite never reaches the network.
+ * That matches how the original behaved here, since its CDN script was blocked.
+ */
+let bundlePromise = null;
+function appBundle() {
+  if (!bundlePromise) {
+    bundlePromise = build({
+      entryPoints: [resolve(ROOT, "src/app.js")],
+      bundle: true,
+      format: "iife",
+      target: "es2020",
+      write: false,
+      logLevel: "silent",
+      define: {
+        "import.meta.env.VITE_SUPABASE_URL": '""',
+        "import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY": '""',
+        "import.meta.env.MODE": '"test"',
+        "import.meta.env.DEV": "false",
+        "import.meta.env.PROD": "false",
+      },
+    }).then((r) => r.outputFiles[0].text);
+  }
+  return bundlePromise;
 }
 
 export function waitFor(fn, { timeout = 5000, interval = 5, label = "condition" } = {}) {
@@ -102,6 +144,20 @@ function installStubs(window) {
   window.URL.createObjectURL = (blob) => { rec.blobs.push(blob); return "blob:mock/" + rec.blobs.length; };
   window.URL.revokeObjectURL = () => {};
 
+  // Keep the suite hermetic no matter which entry is under test. The built
+  // artifact has real Supabase credentials baked in, so without this its auth
+  // client would make live network calls during tests.
+  rec.blockedFetches = [];
+  const realFetch = window.fetch;
+  window.fetch = (input, init) => {
+    const url = typeof input === "string" ? input : (input && input.url) || "";
+    if (/^https?:/i.test(url)) {
+      rec.blockedFetches.push(url);
+      return Promise.reject(new TypeError("network blocked in tests: " + url));
+    }
+    return realFetch ? realFetch(input, init) : Promise.reject(new TypeError("no fetch"));
+  };
+
   const proto = window.Element.prototype;
   proto.setPointerCapture = function () {};
   proto.releasePointerCapture = function () {};
@@ -141,7 +197,31 @@ export const DEFAULT_ENTRY = process.env.MINDMAP_ENTRY || "reference/mindmap-too
  */
 export async function createApp(entry = DEFAULT_ENTRY, opts = {}) {
   const file = resolve(ROOT, entry);
-  const html = readFileSync(file, "utf8");
+  let html = readFileSync(file, "utf8");
+
+  // Swap the module script for a classic one jsdom can run; the loader then
+  // answers that request with the esbuild bundle rather than the file on disk.
+  const overrides = {};
+  const moduleTag = /<script[^>]*src="\/?src\/app\.js"[^>]*><\/script>/;
+  if (moduleTag.test(html)) {
+    html = html.replace(moduleTag, '<script src="src/app.js"></script>');
+    overrides["src/app.js"] = appBundle;
+  }
+
+  // The built single-file artifact carries an inline <script type="module"> in
+  // <head>. Its bundle is self-contained (no top-level import/export), so it
+  // runs fine as a classic script -- but a classic script in <head> executes
+  // before <body> is parsed, whereas a module script is deferred. Move it to
+  // the end of <body> to preserve that ordering, so the same suite can verify
+  // the thing that actually ships.
+  const inlineModule = /<script type="module"(?:\s+crossorigin)?>([\s\S]*?)<\/script>/;
+  const inlined = html.match(inlineModule);
+  if (inlined) {
+    html = html.replace(inlineModule, "");
+    // function replacements: bundles are full of $ sequences that would
+    // otherwise be read as replacement patterns
+    html = html.replace("</body>", () => "<script>" + inlined[1] + "</script>\n</body>");
+  }
 
   const virtualConsole = new VirtualConsole();
   const consoleErrors = [];
@@ -150,7 +230,7 @@ export async function createApp(entry = DEFAULT_ENTRY, opts = {}) {
   const dom = new JSDOM(html, {
     url: pathToFileURL(file).href,
     runScripts: "dangerously",
-    resources: new LocalOnlyLoader(),
+    resources: new LocalOnlyLoader(overrides),
     pretendToBeVisual: true,
     virtualConsole,
     beforeParse(window) {

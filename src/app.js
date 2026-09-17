@@ -1,3 +1,5 @@
+import { createClient } from "@supabase/supabase-js";
+
 (function(){
   "use strict";
 
@@ -360,25 +362,34 @@
   const FS_SUPPORTED = (typeof window.showDirectoryPicker === "function");
 
   /* ---------- Supabase client (cloud backend, work in progress) ---------
-     Fill in your project's URL and PUBLISHABLE key below.
-     Find them in the Supabase dashboard: Project Settings -> API Keys.
-     The publishable key is safe to ship in this file -- it's gated by the
-     RLS policies from mindmap-studio-schema.sql, same as the old "anon" key.
-     Never put the secret key (sb_secret_...) here.
-     This block only creates the client and logs whether it connected; the
-     save/load functions below don't use it yet -- that wiring is next.
+     Configured through .env (see .env.example), not hardcoded here.
+
+     Note that Vite inlines every VITE_* value into the built bundle, so
+     these are visible to anyone who opens the page. That is fine for a
+     PUBLISHABLE key, which is gated by the RLS policies in
+     mindmap-studio-schema-fix.sql -- but a secret key (sb_secret_...) must
+     never be put in a VITE_* variable.
+
+     Leaving the variables blank switches the cloud backend off entirely,
+     which is how the test suite runs.
   ------------------------------------------------------------------------ */
-  const SUPABASE_URL = "https://tdkxovjkhenlqiylouge.supabase.co";
-  const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_tFhuv4zG8OENtcq9WYYSqA_2aFLbRdn";
+  const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "";
+  const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || "";
 
   let supabaseClient = null;
-  if(SUPABASE_URL.indexOf("YOUR-PROJECT-REF")===-1 && typeof window.supabase!=="undefined"){
-    supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
-    console.log("[mindmap] Supabase client created for", SUPABASE_URL);
-  } else if(typeof window.supabase==="undefined"){
-    console.warn("[mindmap] supabase-js didn't load -- check the <script src> tag and your internet connection.");
+  if(SUPABASE_URL && SUPABASE_PUBLISHABLE_KEY){
+    // Guarded because supabase-js is now a hard import rather than an optional
+    // CDN global: an exception here would otherwise abort the whole script and
+    // leave a blank page, where the CDN version merely lost cloud sync.
+    try{
+      supabaseClient = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+      console.log("[mindmap] Supabase client created for", SUPABASE_URL);
+    }catch(err){
+      supabaseClient = null;
+      console.warn("[mindmap] Supabase client failed to start; continuing without cloud sync.", err);
+    }
   } else {
-    console.warn("[mindmap] Supabase not configured yet -- fill in SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY near the top of the script.");
+    console.warn("[mindmap] Supabase not configured -- set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY in .env to enable cloud sync.");
   }
 
   /* ---------- Supabase auth (email magic link) ---------------------------

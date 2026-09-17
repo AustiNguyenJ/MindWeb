@@ -5,14 +5,26 @@
   "type": "module",
   "description": "Mind Map Studio - notebooks, pages, and a block-based mind-mapping canvas.",
   "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
     "test": "cross-env MINDMAP_ENTRY=index.html vitest run",
     "test:watch": "cross-env MINDMAP_ENTRY=index.html vitest",
     "test:baseline": "vitest run",
-    "test:both": "npm run test:baseline && npm run test"
+    "test:both": "npm run test:baseline && npm run test",
+    "test:dist": "cross-env MINDMAP_ENTRY=dist/mindmap-tool.html vitest run",
+    "test:all": "npm run test:baseline && npm run test && npm run build && npm run test:dist",
+    "check": "node --check src/app.js"
   },
   "devDependencies": {
     "cross-env": "^10.1.0",
+    "esbuild": "^0.28.2",
     "jsdom": "^26.1.0",
+    "vite": "^7.3.6",
+    "vite-plugin-singlefile": "^2.3.3",
     "vitest": "^3.2.7"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.116.0"
   }
 }
