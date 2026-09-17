@@ -19,8 +19,8 @@ import {
 import { selectNode } from "./selection.js";
 import { updateConnectionsTouching } from "./connections.js";
 import { queueBoardSave } from "./storage.js";
-import { startConnectDrag } from "./app.js";
 import { measureListOffsets } from "./render.js";
+import { startConnectDrag } from "./canvas.js";
 
 /* Rendering and wiring for schema-driven blocks.
  *

@@ -1,6 +1,13 @@
 import { state } from "./state.js";
 import { COLORS, COPY_ICON } from "./constants.js";
-import { escapeHtml, escapeAttr, sanitizeHtml, richToText, normalizeUrl, openLinkBackground } from "./util.js";
+import {
+  escapeHtml,
+  escapeAttr,
+  sanitizeHtml,
+  richToText,
+  normalizeUrl,
+  openLinkBackground,
+} from "./util.js";
 import { canvasInner, imgFileInput } from "./dom.js";
 import { copyText } from "./clipboard.js";
 import { findNode } from "./boards.js";
@@ -8,12 +15,24 @@ import { isCustomType, setFieldVal } from "./blockTypes.js";
 import { customBodyHtml, wireCustomFields } from "./customFields.js";
 import { selectNode } from "./selection.js";
 import { outgoingCount, descendantsOf, toggleCollapse } from "./collapse.js";
-import { itemHasConnection, addListItem, removeListItem, addTicketRow, removeTicketRow } from "./rows.js";
-import { ticketSummary, createNode, deleteNode, duplicateNode, processImageFile } from "./nodes.js";
+import {
+  itemHasConnection,
+  addListItem,
+  removeListItem,
+  addTicketRow,
+  removeTicketRow,
+} from "./rows.js";
+import {
+  ticketSummary,
+  createNode,
+  deleteNode,
+  duplicateNode,
+  processImageFile,
+} from "./nodes.js";
 import { updateConnectionsTouching } from "./connections.js";
 import { measureListOffsets, renderBoard } from "./render.js";
 import { queueBoardSave } from "./storage.js";
-import { startConnectDrag } from "./app.js";
+import { startConnectDrag } from "./canvas.js";
 
 /* Building one block's DOM, and wiring every control on it.
  *

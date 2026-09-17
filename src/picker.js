@@ -6,7 +6,7 @@ import { clientToCanvas } from "./view.js";
 import { createNode, focusNodeTitle } from "./nodes.js";
 import { createConnection } from "./connections.js";
 import { renderBoard } from "./render.js";
-import { fromItemLabel } from "./app.js";
+import { fromItemLabel } from "./canvas.js";
 
 /* The block picker, opened by dropping a connection on empty canvas.
    Type to filter, Enter takes the top match, and the new block arrives
