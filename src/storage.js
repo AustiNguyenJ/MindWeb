@@ -3,8 +3,20 @@ import { el } from "./dom.js";
 import { showToast } from "./toast.js";
 import { IDX_KEY, TYPES_KEY, APP_KEY_LIMIT } from "./constants.js";
 import { ensureNotebookStructure } from "./boards.js";
-import { migrateNode, recordChange, renderBoard, renderBoardList, renderBoardHeader, centerView } from "./app.js";
-import { cloudPersistIndex, cloudPersistBoard, cloudPersistDeleteBoard, cloudSaveTypes } from "./cloud.js";
+import {
+  migrateNode,
+  renderBoard,
+  renderBoardList,
+  renderBoardHeader,
+  centerView,
+} from "./app.js";
+import {
+  cloudPersistIndex,
+  cloudPersistBoard,
+  cloudPersistDeleteBoard,
+  cloudSaveTypes,
+} from "./cloud.js";
+import { recordChange } from "./history.js";
 
 /* Persistence, across four backends chosen at load time:
  *

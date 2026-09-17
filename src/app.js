@@ -1,16 +1,43 @@
 import {
-  IDX_KEY, TYPES_KEY, COLORS, DEFAULT_SIZE, HOTKEYS, FIELD_KINDS, SUBFIELD_KINDS,
-  RICH_OK_TAGS, RICH_DROP_TAGS, COPY_ICON, APP_KEY_LIMIT, BUILTIN_KEYS,
-  HISTORY_LIMIT, TYPE_ACCENTS, EDITABLE_BUILTINS, PROTECTED_BUILTINS,
+  IDX_KEY,
+  TYPES_KEY,
+  COLORS,
+  DEFAULT_SIZE,
+  HOTKEYS,
+  FIELD_KINDS,
+  SUBFIELD_KINDS,
+  RICH_OK_TAGS,
+  RICH_DROP_TAGS,
+  COPY_ICON,
+  APP_KEY_LIMIT,
+  BUILTIN_KEYS,
+  HISTORY_LIMIT,
+  TYPE_ACCENTS,
+  EDITABLE_BUILTINS,
+  PROTECTED_BUILTINS,
 } from "./constants.js";
 import {
-  uid, escapeHtml, escapeAttr, sanitizeHtml, plainToHtml, richToText, richValue,
-  normalizeUrl, openLinkBackground, currentWeekLabel, isTextEntry, looksRich,
+  uid,
+  escapeHtml,
+  escapeAttr,
+  sanitizeHtml,
+  plainToHtml,
+  richToText,
+  richValue,
+  normalizeUrl,
+  openLinkBackground,
+  currentWeekLabel,
+  isTextEntry,
+  looksRich,
 } from "./util.js";
 import { state } from "./state.js";
 import {
-  getBoard, getData, findNode, ensureNotebookStructure,
-  boardsInNotebook, renumberNotebook,
+  getBoard,
+  getData,
+  findNode,
+  ensureNotebookStructure,
+  boardsInNotebook,
+  renumberNotebook,
 } from "./boards.js";
 import {
   fsRead,
@@ -31,41 +58,45 @@ import {
   restoreFolderHandle,
   updateStorageBar,
 } from "./storage.js";
-import { el, viewport, canvasInner, connSvg, toastEl, imgFileInput } from "./dom.js";
+import {
+  el,
+  viewport,
+  canvasInner,
+  connSvg,
+  toastEl,
+  imgFileInput,
+} from "./dom.js";
 import { showToast } from "./toast.js";
 import { copyText, copyBtnHtml } from "./clipboard.js";
 import {
-  updateCloudBar, connectCloud, cloudPersistIndex, cloudPersistBoard,
-  cloudPersistDeleteBoard, cloudSaveTypes,
+  updateCloudBar,
+  connectCloud,
+  cloudPersistIndex,
+  cloudPersistBoard,
+  cloudPersistDeleteBoard,
+  cloudSaveTypes,
 } from "./cloud.js";
+import {
+  blankField,
+  blankGroupRow,
+  isCustomType,
+  seedBuiltinTypes,
+  reconstructMissingTypes,
+  spawnableTypes,
+  fieldVal,
+  setFieldVal,
+  fieldKindLabel,
+  loadCustomTypes,
+  migrateLongtextKinds,
+} from "./blockTypes.js";
+import { historyReset, undo, redo } from "./history.js";
+import { exportAll, importAll } from "./exportImport.js";
 
 
 /* Custom block types the user defines in the Block Designer. Each is a
    schema: a list of fields, plus a default width. Stored per-file so a
    board carries its own block library. Persisted under mindmap:types. */
 
-function blankField(){
-  return { key:uid().slice(0,6), label:"Field", kind:"text", placeholder:"", options:"", subfields:[], layout:"rows" };
-}
-function blankSubfield(){
-  return { key:uid().slice(0,6), label:"Step", kind:"text", placeholder:"" };
-}
-function blankGroupRow(subfields){
-  const row = {};
-  (subfields||[]).forEach(sf=>{ row[sf.key] = ""; });
-  return row;
-}
-function isCustomType(t){ return !!state.customTypes[t]; }
-
-function seedBuiltinTypes(){
-  Object.keys(EDITABLE_BUILTINS).forEach(id=>{
-    if(!state.customTypes[id]){
-      state.customTypes[id] = JSON.parse(JSON.stringify(EDITABLE_BUILTINS[id]));
-    } else {
-      state.customTypes[id].builtin = true;   // keep the flag even if loaded from storage
-    }
-  });
-}
 
 /* Recover custom block types whose definition file was lost but whose blocks
    still carry data. We scan every board for nodes of a ct_* type that isn't
@@ -76,90 +107,6 @@ function seedBuiltinTypes(){
    This makes orphaned blocks display and stay editable again. Reconstructed
    types are marked so we can tell the user and let them relabel in the designer. */
 
-function reconstructMissingTypes(){
-  const missing = {};   // typeId -> {fieldKey -> inferred field}
-  Object.keys(state.boardsData).forEach(bid=>{
-    (state.boardsData[bid].nodes||[]).forEach(n=>{
-      if(typeof n.type!=="string" || n.type.indexOf("ct_")!==0) return;
-      if(state.customTypes[n.type]) return;                 // definition present, nothing to do
-      if(!n.fields || typeof n.fields!=="object") return;
-      const acc = missing[n.type] || (missing[n.type] = {});
-      Object.keys(n.fields).forEach(fk=>{
-        if(fk==="undefined") return;                  // stray key from an old bug, skip
-        const v = n.fields[fk];
-        if(Array.isArray(v)){
-          // group field: infer subfields from the union of row keys
-          const sub = acc[fk] && acc[fk].kind==="group" ? acc[fk] : {key:fk, label:"Rows", kind:"group", subfields:[], addLabel:"row", layout:"rows"};
-          const seen = new Set(sub.subfields.map(s=>s.key));
-          v.forEach(row=>{
-            if(row && typeof row==="object") Object.keys(row).forEach(sk=>{
-              if(!seen.has(sk)){
-                seen.add(sk);
-                const rich = looksRich(row[sk]);
-                sub.subfields.push({ key:sk, label:"", kind: rich?"richtext":"text", placeholder:"" });
-              }
-            });
-          });
-          // label the columns: rich columns -> "Details", the rest -> "Title"
-          // (only one plain + one rich is the common step/description shape)
-          sub.subfields.forEach((s,i)=>{
-            if(s.label) return;
-            if(s.kind==="richtext") s.label = "Details";
-            else s.label = sub.subfields.length>1 ? "Title" : "Item";
-          });
-          acc[fk] = sub;
-        } else if(!acc[fk]){
-          const rich = looksRich(v);
-          acc[fk] = { key:fk, label: rich?"Notes":"Heading", kind: rich?"richtext":"text", placeholder:"", options:"" };
-        }
-      });
-    });
-  });
-
-  let recovered = 0;
-  Object.keys(missing).forEach(typeId=>{
-    const fields = Object.keys(missing[typeId]).map(k=>missing[typeId][k]);
-    if(!fields.length) return;
-    // put group fields last so simple fields (like a heading) read first
-    fields.sort((a,b)=> (a.kind==="group"?1:0) - (b.kind==="group"?1:0));
-    state.customTypes[typeId] = {
-      id: typeId,
-      name: "Recovered block",
-      accent: "#ffffff",
-      width: 300,
-      fields: fields,
-      recovered: true
-    };
-    recovered++;
-  });
-  if(recovered){
-    queueTypesSave();
-    setTimeout(()=>showToast(recovered+" block type"+(recovered>1?"s":"")+" recovered from page data \u2014 relabel in Design blocks"), 500);
-  }
-  return recovered;
-}
-
-/* Every block type the user can create, for the connection-drop picker.
-   Order: common built-ins first, then structural ones, then custom types. */
-function spawnableTypes(){
-  const list = [];
-  const seen = new Set();
-  const push = (type, name, accent)=>{ if(!seen.has(type)){ seen.add(type); list.push({type, name, accent}); } };
-  // preferred built-in order
-  push("note", "Note", "#ffffff");
-  push("question", "Question", "#ffffff");
-  push("list", "List", "#ffffff");
-  push("ticket", "Ticket", "#ffffff");
-  push("week", "Week", "#ffffff");
-  push("header", "Header", "#4757d1");
-  push("image", "Image", "#bfdbfe");
-  // any custom (non-builtin) types
-  Object.keys(state.customTypes).forEach(id=>{
-    const t = state.customTypes[id];
-    if(!t.builtin) push(id, t.name || "Custom", t.accent || "#ffffff");
-  });
-  return list;
-}
 
 let searchScope = { mode:"all", id:null };   // all | notebook | page
 
@@ -196,87 +143,9 @@ function ticketSummary(t){
    the (possibly recoverable) file with an empty one on the next autosave. */
 
 
-/* ---------- export / import ---------- */
-function exportAll(){
-  const payload = {
-    version:2, exported:new Date().toISOString(),
-    blockTypes: state.customTypes,
-    notebooks: state.notebooks,
-    boards: state.boards.map(b=>({
-      id:b.id, name:b.name, description:b.description||"", notebookId:b.notebookId||null, order:b.order, pinned:!!b.pinned,
-      nodes:(state.boardsData[b.id]||{}).nodes||[],
-      connections:(state.boardsData[b.id]||{}).connections||[]
-    }))
-  };
-  const blob = new Blob([JSON.stringify(payload,null,2)], {type:"application/json"});
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = "mindmaps-"+new Date().toISOString().slice(0,10)+".json";
-  a.click();
-  setTimeout(()=>URL.revokeObjectURL(a.href), 2000);
-  showToast("Exported");
-}
-
-function importAll(file){
-  const reader = new FileReader();
-  reader.onload = async (e)=>{
-    let payload;
-    try{ payload = JSON.parse(e.target.result); }
-    catch(err){ alert("That file isn't valid JSON."); return; }
-    const incoming = payload.boards || [];
-    if(!incoming.length){ alert("No pages found in that file."); return; }
-    if(!confirm("Import "+incoming.length+" page(s)? They'll be added alongside your current pages.")) return;
-    // merge any custom block types the file carries (keep existing on id clash)
-    if(payload.blockTypes){
-      let added = 0;
-      Object.keys(payload.blockTypes).forEach(id=>{
-        if(!state.customTypes[id]){ state.customTypes[id] = payload.blockTypes[id]; added++; }
-      });
-      if(added){ queueTypesSave(); renderTypeToolbar(); }
-      migrateLongtextKinds();
-    }
-    // recreate the imported notebooks under fresh ids, mapping old->new
-    const nbMap = {};
-    let importNbId = null;
-    if(Array.isArray(payload.notebooks) && payload.notebooks.length){
-      payload.notebooks.forEach(onb=>{
-        const nid = "nb_"+uid().slice(0,8);
-        nbMap[onb.id] = nid;
-        state.notebooks.push({ id:nid, name:onb.name||"Imported notebook", collapsed:false });
-      });
-    } else {
-      importNbId = "nb_"+uid().slice(0,8);
-      state.notebooks.push({ id:importNbId, name:"Imported", collapsed:false });
-    }
-    incoming.forEach(b=>{
-      const id = uid();
-      const nbId = (b.notebookId && nbMap[b.notebookId]) ? nbMap[b.notebookId] : (importNbId || state.notebooks[state.notebooks.length-1].id);
-      state.boards.push({id, name:(b.name||"Imported page"), description:b.description||"", notebookId:nbId, order:(typeof b.order==="number"?b.order:state.boards.length), pinned:!!b.pinned});
-      state.boardsData[id] = { nodes:(b.nodes||[]).map(migrateNode), connections:b.connections||[] };
-    });
-    ensureNotebookStructure();
-    renderBoardList();
-    await persistIndex();
-    for(const b of state.boards){ await persistBoard(b.id); }
-    showToast("Imported");
-  };
-  reader.readAsText(file);
-}
-
 function blankTicket(){ return {no:"", link:"", assigned:"", customer:"", note:""}; }
 
 /* ---------- custom block types ---------- */
-/* Built-in editable types keep their data in top-level node props; custom
-   fields live in node.fields. These accessors hide that difference so one
-   render engine serves both. */
-function fieldVal(node, key){
-  if(BUILTIN_KEYS[key] && node[key]!==undefined) return node[key];
-  return node.fields ? node.fields[key] : undefined;
-}
-function setFieldVal(node, key, val){
-  if(BUILTIN_KEYS[key]){ node[key] = val; }
-  else { node.fields = node.fields || {}; node.fields[key] = val; }
-}
 
 function subfieldInputHtml(sf, val, gkey, rowIdx){
   const ph = escapeAttr(sf.placeholder||"");
@@ -558,35 +427,6 @@ export function migrateNode(n){
   return n;
 }
 
-async function loadCustomTypes(){
-  try{
-    if(state.backend==="folder"){
-      const txt = await fsRead("block-types.json");
-      if(txt) state.customTypes = JSON.parse(txt);
-    } else if(state.backend==="app" && typeof window.storage!=="undefined" && window.storage){
-      const res = await window.storage.get(TYPES_KEY, false);
-      if(res && res.value) state.customTypes = JSON.parse(res.value);
-    }
-  }catch(err){ state.customTypes = state.customTypes || {}; }
-  migrateLongtextKinds();
-}
-
-/* longtext and richtext were merged; normalize any stored 'longtext' kind to
-   'richtext' so the designer dropdowns and renderers only deal with one kind.
-   Values are compatible (richValue coerces old plain text into HTML). */
-function migrateLongtextKinds(){
-  let changed = false;
-  Object.keys(state.customTypes).forEach(id=>{
-    const t = state.customTypes[id];
-    (t.fields||[]).forEach(f=>{
-      if(f.kind==="longtext"){ f.kind="richtext"; changed=true; }
-      if(f.kind==="group"){
-        (f.subfields||[]).forEach(sf=>{ if(sf.kind==="longtext"){ sf.kind="richtext"; changed=true; } });
-      }
-    });
-  });
-  if(changed) queueTypesSave();
-}
 
 async function loadAll(){
   // 1. try a previously connected folder
@@ -1637,72 +1477,6 @@ function toggleCollapse(id){
   queueBoardSave(state.currentBoardId);
 }
 
-/* ---------- undo / redo ----------
-   Snapshot-based, one history per page. Changes made within ~450ms of each
-   other collapse into a single step, so typing a word is one undo, not ten. */
-let undoStacks = {}, redoStacks = {}, lastSnapshots = {};
-let historyTimer = null;
-
-function snapshot(){
-  const d = getData();
-  return JSON.stringify({nodes:d.nodes, connections:d.connections});
-}
-export function historyReset(boardId){
-  undoStacks[boardId] = [];
-  redoStacks[boardId] = [];
-  lastSnapshots[boardId] = snapshot();
-}
-export function recordChange(){
-  const boardId = state.currentBoardId;
-  clearTimeout(historyTimer);
-  historyTimer = setTimeout(()=>{
-    const cur = snapshot();
-    if(cur === lastSnapshots[boardId]) return;
-    const stack = undoStacks[boardId] || (undoStacks[boardId] = []);
-    if(lastSnapshots[boardId] !== undefined) stack.push(lastSnapshots[boardId]);
-    if(stack.length > HISTORY_LIMIT) stack.shift();
-    lastSnapshots[boardId] = cur;
-    redoStacks[boardId] = [];
-  }, 450);
-}
-function restoreSnapshot(json){
-  const p = JSON.parse(json);
-  const d = getData();
-  d.nodes = p.nodes;
-  d.connections = p.connections;
-  state.selection.clear();
-  state.selectedConnId = null;
-  renderBoard();
-  persistBoard(state.currentBoardId);
-}
-function undo(){
-  clearTimeout(historyTimer);
-  const boardId = state.currentBoardId;
-  const stack = undoStacks[boardId] || [];
-  // fold in any change that hasn't been committed to history yet
-  const cur = snapshot();
-  if(cur !== lastSnapshots[boardId]){
-    stack.push(lastSnapshots[boardId]);
-    lastSnapshots[boardId] = cur;
-  }
-  if(!stack.length){ showToast("Nothing to undo"); return; }
-  (redoStacks[boardId] || (redoStacks[boardId]=[])).push(snapshot());
-  const prev = stack.pop();
-  lastSnapshots[boardId] = prev;
-  restoreSnapshot(prev);
-  showToast("Undo");
-}
-function redo(){
-  clearTimeout(historyTimer);
-  const boardId = state.currentBoardId;
-  const stack = redoStacks[boardId] || [];
-  if(!stack.length){ showToast("Nothing to redo"); return; }
-  (undoStacks[boardId] || (undoStacks[boardId]=[])).push(snapshot());
-  const next = stack.pop();
-  lastSnapshots[boardId] = next;
-  restoreSnapshot(next);
-  showToast("Redo");
-}
 
 function deselectAll(){
   state.selection.clear(); state.selectedConnId=null;
@@ -2951,12 +2725,6 @@ function renderFields(){
   });
 }
 
-
-function fieldKindLabel(k){
-  return {text:"Short text", longtext:"Rich text", richtext:"Rich text",
-    link:"Link / URL", number:"Number", date:"Date", select:"Dropdown", checkbox:"Checkbox",
-    group:"Repeating rows"}[k] || k;
-}
 
 function renderPreview(){
   const t = state.customTypes[bdEditingId];
