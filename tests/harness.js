@@ -76,7 +76,22 @@ function appBundle() {
         "import.meta.env.DEV": "false",
         "import.meta.env.PROD": "false",
       },
-    }).then((r) => r.outputFiles[0].text);
+    }).then(
+      (r) => r.outputFiles[0].text,
+      (err) => {
+        // Surface this loudly. If the bundle merely failed to arrive, jsdom
+        // would run no script at all and every test would die of an 8-second
+        // "init timed out", which says nothing about the real cause -- a
+        // missing export being the usual one.
+        const detail = (err.errors || [])
+          .map((e) => {
+            const l = e.location;
+            return "  " + (l ? `${l.file}:${l.line}:${l.column} ` : "") + e.text;
+          })
+          .join("\n");
+        throw new Error("Failed to bundle src/app.js:\n" + (detail || err.message));
+      }
+    );
   }
   return bundlePromise;
 }
@@ -205,6 +220,9 @@ export async function createApp(entry = DEFAULT_ENTRY, opts = {}) {
   const moduleTag = /<script[^>]*src="\/?src\/app\.js"[^>]*><\/script>/;
   if (moduleTag.test(html)) {
     html = html.replace(moduleTag, '<script src="src/app.js"></script>');
+    // build up front so a broken module graph throws here, with the compiler's
+    // own message, instead of silently producing a page that never boots
+    await appBundle();
     overrides["src/app.js"] = appBundle;
   }
 

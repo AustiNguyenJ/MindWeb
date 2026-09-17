@@ -30,4 +30,36 @@ for (const f of files) {
 }
 
 console.log(`${files.length - bad}/${files.length} files parse cleanly`);
+
+/* Parsing is not enough. `node --check` sees one file at a time, so it cannot
+   catch a module importing a name its neighbour never exported -- which shows
+   up only as a mysteriously silent app. Bundling the entry resolves the whole
+   module graph and fails loudly on exactly that. */
+try {
+  const { build } = await import("esbuild");
+  await build({
+    entryPoints: [join(ROOT, "src/app.js")],
+    bundle: true,
+    format: "iife",
+    target: "es2020",
+    write: false,
+    logLevel: "silent",
+    define: {
+      "import.meta.env.VITE_SUPABASE_URL": '""',
+      "import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY": '""',
+      "import.meta.env.MODE": '"test"',
+      "import.meta.env.DEV": "false",
+      "import.meta.env.PROD": "false",
+    },
+  });
+  console.log("module graph resolves (imports all satisfied)");
+} catch (err) {
+  bad++;
+  for (const e of err.errors ?? []) {
+    const l = e.location;
+    console.error(`FAIL ${l ? `${l.file}:${l.line}:${l.column}` : ""} ${e.text}`);
+  }
+  if (!err.errors) console.error(String(err.message).split("\n").slice(0, 5).join("\n"));
+}
+
 process.exit(bad ? 1 : 0);
