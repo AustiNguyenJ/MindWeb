@@ -8,12 +8,12 @@ import {
   uid, escapeHtml, escapeAttr, sanitizeHtml, plainToHtml, richToText, richValue,
   normalizeUrl, openLinkBackground, currentWeekLabel, isTextEntry, looksRich,
 } from "./util.js";
+import { state } from "./state.js";
 
 
 /* Custom block types the user defines in the Block Designer. Each is a
    schema: a list of fields, plus a default width. Stored per-file so a
    board carries its own block library. Persisted under mindmap:types. */
-let customTypes = {};   // typeId -> {id,name,accent,width,fields:[...]}
 
 function blankField(){
   return { key:uid().slice(0,6), label:"Field", kind:"text", placeholder:"", options:"", subfields:[], layout:"rows" };
@@ -26,14 +26,14 @@ function blankGroupRow(subfields){
   (subfields||[]).forEach(sf=>{ row[sf.key] = ""; });
   return row;
 }
-function isCustomType(t){ return !!customTypes[t]; }
+function isCustomType(t){ return !!state.customTypes[t]; }
 
 function seedBuiltinTypes(){
   Object.keys(EDITABLE_BUILTINS).forEach(id=>{
-    if(!customTypes[id]){
-      customTypes[id] = JSON.parse(JSON.stringify(EDITABLE_BUILTINS[id]));
+    if(!state.customTypes[id]){
+      state.customTypes[id] = JSON.parse(JSON.stringify(EDITABLE_BUILTINS[id]));
     } else {
-      customTypes[id].builtin = true;   // keep the flag even if loaded from storage
+      state.customTypes[id].builtin = true;   // keep the flag even if loaded from storage
     }
   });
 }
@@ -49,10 +49,10 @@ function seedBuiltinTypes(){
 
 function reconstructMissingTypes(){
   const missing = {};   // typeId -> {fieldKey -> inferred field}
-  Object.keys(boardsData).forEach(bid=>{
-    (boardsData[bid].nodes||[]).forEach(n=>{
+  Object.keys(state.boardsData).forEach(bid=>{
+    (state.boardsData[bid].nodes||[]).forEach(n=>{
       if(typeof n.type!=="string" || n.type.indexOf("ct_")!==0) return;
-      if(customTypes[n.type]) return;                 // definition present, nothing to do
+      if(state.customTypes[n.type]) return;                 // definition present, nothing to do
       if(!n.fields || typeof n.fields!=="object") return;
       const acc = missing[n.type] || (missing[n.type] = {});
       Object.keys(n.fields).forEach(fk=>{
@@ -93,7 +93,7 @@ function reconstructMissingTypes(){
     if(!fields.length) return;
     // put group fields last so simple fields (like a heading) read first
     fields.sort((a,b)=> (a.kind==="group"?1:0) - (b.kind==="group"?1:0));
-    customTypes[typeId] = {
+    state.customTypes[typeId] = {
       id: typeId,
       name: "Recovered block",
       accent: "#ffffff",
@@ -125,25 +125,17 @@ function spawnableTypes(){
   push("header", "Header", "#4757d1");
   push("image", "Image", "#bfdbfe");
   // any custom (non-builtin) types
-  Object.keys(customTypes).forEach(id=>{
-    const t = customTypes[id];
+  Object.keys(state.customTypes).forEach(id=>{
+    const t = state.customTypes[id];
     if(!t.builtin) push(id, t.name || "Custom", t.accent || "#ffffff");
   });
   return list;
 }
 
-let boards = [], boardsData = {}, currentBoardId = null;
-let notebooks = [];            // [{id, name, collapsed}]
 let searchScope = { mode:"all", id:null };   // all | notebook | page
-let selection = new Set();   // ids of selected boxes
-let selectedConnId = null;
 
 let marqueeEl = null;
-let clipboardNode = null, dragState = null;
-let saveTimers = {}, toastTimer = null;
-let itemOffsets = {};              // nodeId -> [y offset of each list/week row]
-let groupOffsets = {};             // nodeId -> { "g:field:idx": yOffset }
-let cursorCanvas = { x:2100, y:1500 };
+let toastTimer = null;
 let linkTipEl = null;
 
 const el = (id)=>document.getElementById(id);
@@ -153,7 +145,6 @@ const connSvg = el("connSvg");
 const toastEl = el("toast");
 const imgFileInput = el("imgFileInput");
 
-let view = { x:0, y:0, scale:1 };
 
 
 function showToast(msg){
@@ -207,8 +198,8 @@ function ticketSummary(t){
 }
 
 
-function getBoard(){ return boards.find(b=>b.id===currentBoardId); }
-function getData(){ return boardsData[currentBoardId] || {nodes:[],connections:[]}; }
+function getBoard(){ return state.boards.find(b=>b.id===state.currentBoardId); }
+function getData(){ return state.boardsData[state.currentBoardId] || {nodes:[],connections:[]}; }
 function findNode(id){ return getData().nodes.find(n=>n.id===id); }
 
 /* ---------- storage backends ------------------------------------------
@@ -222,9 +213,6 @@ function findNode(id){ return getData().nodes.find(n=>n.id===id); }
    A browser page cannot create folders unattended, so "folder" mode needs
    you to pick the parent folder once. The handle is remembered after that.
 ------------------------------------------------------------------------ */
-let backend = "memory";
-let rootHandle = null;   // folder the user picked
-let dirHandle = null;    // <root>/saved-boards
 
 const FS_SUPPORTED = (typeof window.showDirectoryPicker === "function");
 
@@ -243,16 +231,15 @@ const FS_SUPPORTED = (typeof window.showDirectoryPicker === "function");
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "";
 const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || "";
 
-let supabaseClient = null;
 if(SUPABASE_URL && SUPABASE_PUBLISHABLE_KEY){
   // Guarded because supabase-js is now a hard import rather than an optional
   // CDN global: an exception here would otherwise abort the whole script and
   // leave a blank page, where the CDN version merely lost cloud sync.
   try{
-    supabaseClient = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+    state.supabaseClient = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
     console.log("[mindmap] Supabase client created for", SUPABASE_URL);
   }catch(err){
-    supabaseClient = null;
+    state.supabaseClient = null;
     console.warn("[mindmap] Supabase client failed to start; continuing without cloud sync.", err);
   }
 } else {
@@ -265,21 +252,20 @@ if(SUPABASE_URL && SUPABASE_PUBLISHABLE_KEY){
    minimal email-link sign-in flow in the sidebar. It does not touch board
    storage yet -- backend stays "folder"/"app"/"memory" until that's next.
 ------------------------------------------------------------------------ */
-let supabaseSession = null;
 let cloudConnectAttempted = false;   // guards against connecting twice per page load
 
 function updateCloudBar(){
   const bar = el("cloudBar");
   if(!bar) return;
-  if(!supabaseClient){ bar.style.display = "none"; return; }
+  if(!state.supabaseClient){ bar.style.display = "none"; return; }
   bar.style.display = "";
   const label = el("cloudLabel"), sub = el("cloudSub"), actions = el("cloudActions");
-  if(supabaseSession){
+  if(state.supabaseSession){
     bar.className = "storage-bar ok";
     label.textContent = "Signed in";
-    sub.textContent = supabaseSession.user.email;
+    sub.textContent = state.supabaseSession.user.email;
     actions.innerHTML = '<button id="cloudSignOutBtn">Sign out</button>';
-    el("cloudSignOutBtn").addEventListener("click", async ()=>{ await supabaseClient.auth.signOut(); });
+    el("cloudSignOutBtn").addEventListener("click", async ()=>{ await state.supabaseClient.auth.signOut(); });
   } else {
     bar.className = "storage-bar warn";
     label.textContent = "Not signed in";
@@ -299,7 +285,7 @@ async function sendMagicLink(){
   if(!email || email.indexOf("@")===-1){ showToast("Enter a valid email"); return; }
   const btn = el("cloudSignInBtn");
   if(btn){ btn.disabled = true; btn.textContent = "Sending\u2026"; }
-  const { error } = await supabaseClient.auth.signInWithOtp({
+  const { error } = await state.supabaseClient.auth.signInWithOtp({
     email, options:{ emailRedirectTo: window.location.href }
   });
   if(error){
@@ -311,15 +297,15 @@ async function sendMagicLink(){
   if(btn) btn.textContent = "Link sent";
 }
 
-if(supabaseClient){
+if(state.supabaseClient){
   updateCloudBar();
-  supabaseClient.auth.getSession().then(({data})=>{
-    supabaseSession = data.session;
+  state.supabaseClient.auth.getSession().then(({data})=>{
+    state.supabaseSession = data.session;
     updateCloudBar();
-    if(supabaseSession) connectCloud();
+    if(state.supabaseSession) connectCloud();
   });
-  supabaseClient.auth.onAuthStateChange((event, session)=>{
-    supabaseSession = session;
+  state.supabaseClient.auth.onAuthStateChange((event, session)=>{
+    state.supabaseSession = session;
     updateCloudBar();
     if(event==="SIGNED_IN"){ showToast("Signed in as "+session.user.email); connectCloud(); }
     if(event==="SIGNED_OUT"){
@@ -327,7 +313,7 @@ if(supabaseClient){
       cloudConnectAttempted = false;
       // stop trying to save to Supabase now that there's no session; local
       // edits still work, they just won't persist until signed in again
-      if(backend==="cloud") backend = "memory";
+      if(state.backend==="cloud") state.backend = "memory";
       updateStorageBar();
     }
   });
@@ -344,7 +330,7 @@ if(supabaseClient){
    unchanged once backend==="cloud".
 ------------------------------------------------------------------------ */
 
-function cloudUserId(){ return (supabaseSession && supabaseSession.user) ? supabaseSession.user.id : null; }
+function cloudUserId(){ return (state.supabaseSession && state.supabaseSession.user) ? state.supabaseSession.user.id : null; }
 
 /* Pull everything the signed-in user can see out of Supabase and rebuild
    notebooks / boards / boardsData / customTypes in the shape the rest of
@@ -352,31 +338,31 @@ function cloudUserId(){ return (supabaseSession && supabaseSession.user) ? supab
    account has no boards yet, so the caller knows to seed it instead. */
 async function cloudReadAll(){
   const [{data:nbRows, error:nbErr}, {data:boardRows, error:bErr}, {data:typeRows, error:tErr}] = await Promise.all([
-    supabaseClient.from("notebooks").select("*").order("created_at"),
-    supabaseClient.from("boards").select("*"),
-    supabaseClient.from("block_types").select("*")
+    state.supabaseClient.from("notebooks").select("*").order("created_at"),
+    state.supabaseClient.from("boards").select("*"),
+    state.supabaseClient.from("block_types").select("*")
   ]);
   if(nbErr || bErr || tErr){ console.error("[mindmap] cloud read failed", nbErr||bErr||tErr); return false; }
   if(!boardRows.length) return false;
 
-  notebooks = nbRows.map(r=>({ id:r.id, name:r.name, collapsed:!!r.collapsed }));
-  boards = boardRows.map(r=>({
+  state.notebooks = nbRows.map(r=>({ id:r.id, name:r.name, collapsed:!!r.collapsed }));
+  state.boards = boardRows.map(r=>({
     id:r.id, name:r.name, description:r.description||"", notebookId:r.notebook_id,
     order:r.sort_order, pinned:!!r.pinned
   }));
-  customTypes = {};
+  state.customTypes = {};
   (typeRows||[]).forEach(r=>{
-    customTypes[r.id] = { id:r.id, name:r.name, accent:r.accent, width:r.width, fields:r.fields||[], builtin:!!r.builtin };
+    state.customTypes[r.id] = { id:r.id, name:r.name, accent:r.accent, width:r.width, fields:r.fields||[], builtin:!!r.builtin };
   });
 
-  boardsData = {};
-  for(const b of boards){
+  state.boardsData = {};
+  for(const b of state.boards){
     const [{data:nodeRows, error:nErr}, {data:connRows, error:cErr}] = await Promise.all([
-      supabaseClient.from("nodes").select("*").eq("board_id", b.id),
-      supabaseClient.from("connections").select("*").eq("board_id", b.id)
+      state.supabaseClient.from("nodes").select("*").eq("board_id", b.id),
+      state.supabaseClient.from("connections").select("*").eq("board_id", b.id)
     ]);
-    if(nErr || cErr){ console.error("[mindmap] cloud board read failed", b.id, nErr||cErr); boardsData[b.id]={nodes:[],connections:[]}; continue; }
-    boardsData[b.id] = {
+    if(nErr || cErr){ console.error("[mindmap] cloud board read failed", b.id, nErr||cErr); state.boardsData[b.id]={nodes:[],connections:[]}; continue; }
+    state.boardsData[b.id] = {
       nodes: (nodeRows||[]).map(r=>migrateNode({
         id:r.id, type:r.type, x:r.x, y:r.y, w:r.w, h:r.h, title:r.title||"",
         body:r.body||"", bodyHtml:r.body_html||"", color:r.color||"#ffffff",
@@ -397,37 +383,37 @@ async function cloudPersistIndex(){
   // NOTE: once board sharing has an invite UI, this needs to stop writing
   // owner_id for boards the signed-in user doesn't own. Harmless for now
   // since there's no way yet for a board to belong to anyone else.
-  if(notebooks.length){
-    const rows = notebooks.map(nb=>({ id:nb.id, owner_id:uid, name:nb.name, collapsed:!!nb.collapsed }));
-    const { error } = await supabaseClient.from("notebooks").upsert(rows);
+  if(state.notebooks.length){
+    const rows = state.notebooks.map(nb=>({ id:nb.id, owner_id:uid, name:nb.name, collapsed:!!nb.collapsed }));
+    const { error } = await state.supabaseClient.from("notebooks").upsert(rows);
     if(error) throw error;
   }
-  if(boards.length){
-    const rows = boards.map(b=>({
+  if(state.boards.length){
+    const rows = state.boards.map(b=>({
       id:b.id, owner_id:uid, notebook_id:b.notebookId||null, name:b.name,
       description:b.description||"", sort_order:b.order||0, pinned:!!b.pinned
     }));
-    const { error } = await supabaseClient.from("boards").upsert(rows);
+    const { error } = await state.supabaseClient.from("boards").upsert(rows);
     if(error) throw error;
   }
 }
 
 async function cloudPersistBoard(id){
-  const data = boardsData[id] || {nodes:[],connections:[]};
+  const data = state.boardsData[id] || {nodes:[],connections:[]};
   const localNodeIds = new Set(data.nodes.map(n=>n.id));
   const localConnIds = new Set(data.connections.map(c=>c.id));
 
   const [{data:existingNodes}, {data:existingConns}] = await Promise.all([
-    supabaseClient.from("nodes").select("id").eq("board_id", id),
-    supabaseClient.from("connections").select("id").eq("board_id", id)
+    state.supabaseClient.from("nodes").select("id").eq("board_id", id),
+    state.supabaseClient.from("connections").select("id").eq("board_id", id)
   ]);
   const staleConnIds = (existingConns||[]).map(r=>r.id).filter(cid=>!localConnIds.has(cid));
   const staleNodeIds = (existingNodes||[]).map(r=>r.id).filter(nid=>!localNodeIds.has(nid));
 
   // connections reference nodes, so remove stale connections before stale nodes,
   // and upsert nodes before connections that might point at brand-new ones
-  if(staleConnIds.length) await supabaseClient.from("connections").delete().in("id", staleConnIds);
-  if(staleNodeIds.length) await supabaseClient.from("nodes").delete().in("id", staleNodeIds);
+  if(staleConnIds.length) await state.supabaseClient.from("connections").delete().in("id", staleConnIds);
+  if(staleNodeIds.length) await state.supabaseClient.from("nodes").delete().in("id", staleNodeIds);
 
   if(data.nodes.length){
     const rows = data.nodes.map(n=>({
@@ -435,7 +421,7 @@ async function cloudPersistBoard(id){
       title:n.title||"", body:n.body||"", body_html:n.bodyHtml||"", color:n.color||"#ffffff",
       fields:n.fields||{}, collapsed:!!n.collapsed, updated_by:cloudUserId()
     }));
-    const { error } = await supabaseClient.from("nodes").upsert(rows);
+    const { error } = await state.supabaseClient.from("nodes").upsert(rows);
     if(error) throw error;
   }
   if(data.connections.length){
@@ -443,25 +429,25 @@ async function cloudPersistBoard(id){
       id:c.id, board_id:id, from_node:c.from, from_item:c.fromItem||null,
       to_node:c.to, to_item:c.toItem||null, label:c.label||null
     }));
-    const { error } = await supabaseClient.from("connections").upsert(rows);
+    const { error } = await state.supabaseClient.from("connections").upsert(rows);
     if(error) throw error;
   }
 }
 
 async function cloudPersistDeleteBoard(id){
   // ON DELETE CASCADE on nodes/connections/board_members handles the rest
-  try{ await supabaseClient.from("boards").delete().eq("id", id); }catch(err){}
+  try{ await state.supabaseClient.from("boards").delete().eq("id", id); }catch(err){}
 }
 
 async function cloudSaveTypes(){
   const uid = cloudUserId();
-  if(!uid || !Object.keys(customTypes).length) return;
-  const rows = Object.keys(customTypes).map(tid=>{
-    const t = customTypes[tid];
+  if(!uid || !Object.keys(state.customTypes).length) return;
+  const rows = Object.keys(state.customTypes).map(tid=>{
+    const t = state.customTypes[tid];
     return { id:tid, owner_id:uid, name:t.name||"Custom", accent:t.accent||"#ffffff",
              width:t.width||220, fields:t.fields||[], builtin:!!t.builtin };
   });
-  const { error } = await supabaseClient.from("block_types").upsert(rows);
+  const { error } = await state.supabaseClient.from("block_types").upsert(rows);
   if(error) console.error("[mindmap] cloud types save failed", error);
 }
 
@@ -470,27 +456,27 @@ async function cloudSaveTypes(){
    shape. If a folder is already connected, that stays authoritative --
    signing in doesn't redirect saves away from an explicit local choice. */
 async function connectCloud(){
-  if(cloudConnectAttempted || !supabaseClient || !supabaseSession) return;
+  if(cloudConnectAttempted || !state.supabaseClient || !state.supabaseSession) return;
   cloudConnectAttempted = true;
-  if(backend==="folder"){
+  if(state.backend==="folder"){
     showToast("Signed in \u2014 still saving to your folder");
     return;
   }
   try{
     const found = await cloudReadAll();
     if(found){
-      backend = "cloud";
-      currentBoardId = boards[0].id;
+      state.backend = "cloud";
+      state.currentBoardId = state.boards[0].id;
       showToast("Loaded from cloud");
     } else {
       await cloudPersistIndex();
       await cloudSaveTypes();
-      for(const b of boards){ await cloudPersistBoard(b.id); }
-      backend = "cloud";
+      for(const b of state.boards){ await cloudPersistBoard(b.id); }
+      state.backend = "cloud";
       showToast("Cloud connected \u2014 synced your current boards");
     }
     renderBoardList(); renderBoardHeader(); centerView(); renderBoard();
-    renderTypeToolbar(); historyReset(currentBoardId); updateStorageBar();
+    renderTypeToolbar(); historyReset(state.currentBoardId); updateStorageBar();
   }catch(err){
     console.error("[mindmap] cloud connect failed", err);
     showToast("Couldn't connect to cloud \u2014 see console");
@@ -539,7 +525,7 @@ async function fsWrite(name, text){
   return serializeWrite(name, async ()=>{
     for(let attempt=0; attempt<2; attempt++){
       try{
-        const fh = await dirHandle.getFileHandle(name, {create:true});
+        const fh = await state.dirHandle.getFileHandle(name, {create:true});
         const w = await fh.createWritable({keepExistingData:false});
         await w.write(text);
         await w.close();
@@ -558,14 +544,14 @@ async function fsWrite(name, text){
 
 async function fsRead(name){
   try{
-    const fh = await dirHandle.getFileHandle(name, {create:false});
+    const fh = await state.dirHandle.getFileHandle(name, {create:false});
     const file = await fh.getFile();
     return await file.text();
   }catch(e){ return null; }
 }
 async function fsDelete(name){
   return serializeWrite(name, async ()=>{
-    try{ await dirHandle.removeEntry(name); }catch(e){}
+    try{ await state.dirHandle.removeEntry(name); }catch(e){}
   });
 }
 
@@ -573,8 +559,6 @@ function boardFileName(id){ return "board-"+id+".json"; }
 
 /* Track boards whose file existed but failed to parse, so we don't overwrite
    the (possibly recoverable) file with an empty one on the next autosave. */
-const corruptBoards = new Set();
-const corruptPrompted = new Set();
 
 /* Parse a stored board payload defensively. Returns {ok, data}. A file that
    exists but doesn't parse, or parses to something without a nodes array, is
@@ -592,17 +576,17 @@ function parseBoardText(txt){
 }
 
 function ensureNotebookStructure(){
-  if(!Array.isArray(notebooks)) notebooks = [];
-  if(!notebooks.length){
-    notebooks = [{ id:"nb_"+uid().slice(0,8), name:"My Notebook", collapsed:false }];
+  if(!Array.isArray(state.notebooks)) state.notebooks = [];
+  if(!state.notebooks.length){
+    state.notebooks = [{ id:"nb_"+uid().slice(0,8), name:"My Notebook", collapsed:false }];
   }
-  const validIds = new Set(notebooks.map(n=>n.id));
-  const fallback = notebooks[0].id;
-  boards.forEach(b=>{ if(!b.notebookId || !validIds.has(b.notebookId)) b.notebookId = fallback; });
-  notebooks.forEach(n=>{ if(typeof n.collapsed!=="boolean") n.collapsed=false; });
+  const validIds = new Set(state.notebooks.map(n=>n.id));
+  const fallback = state.notebooks[0].id;
+  state.boards.forEach(b=>{ if(!b.notebookId || !validIds.has(b.notebookId)) b.notebookId = fallback; });
+  state.notebooks.forEach(n=>{ if(typeof n.collapsed!=="boolean") n.collapsed=false; });
   // seed pin flag and an explicit order for any page missing them.
   // order is seeded from current array position so nothing reshuffles.
-  boards.forEach((b,i)=>{
+  state.boards.forEach((b,i)=>{
     if(typeof b.pinned!=="boolean") b.pinned=false;
     if(typeof b.order!=="number") b.order = i;
   });
@@ -613,18 +597,18 @@ function parseIndex(raw){
   let parsed;
   try{ parsed = JSON.parse(raw); }catch(e){ return; }
   if(Array.isArray(parsed)){
-    boards = parsed.map(b=>({id:b.id, name:b.name, description:b.description||"", notebookId:b.notebookId||null, order:b.order, pinned:!!b.pinned}));
-    notebooks = [];
+    state.boards = parsed.map(b=>({id:b.id, name:b.name, description:b.description||"", notebookId:b.notebookId||null, order:b.order, pinned:!!b.pinned}));
+    state.notebooks = [];
   } else if(parsed && Array.isArray(parsed.boards)){
-    boards = parsed.boards.map(b=>({id:b.id, name:b.name, description:b.description||"", notebookId:b.notebookId||null, order:b.order, pinned:!!b.pinned}));
-    notebooks = Array.isArray(parsed.notebooks) ? parsed.notebooks.slice() : [];
+    state.boards = parsed.boards.map(b=>({id:b.id, name:b.name, description:b.description||"", notebookId:b.notebookId||null, order:b.order, pinned:!!b.pinned}));
+    state.notebooks = Array.isArray(parsed.notebooks) ? parsed.notebooks.slice() : [];
   }
 }
 
 /* Pages within a notebook, ordered: pinned first, then by their order value.
    Ties fall back to array position so the sort is always stable. */
 function boardsInNotebook(nbId){
-  return boards
+  return state.boards
     .map((b,i)=>({b, i}))
     .filter(x=>x.b.notebookId===nbId)
     .sort((A,B)=>{
@@ -642,8 +626,8 @@ function renumberNotebook(nbId){
   boardsInNotebook(nbId).forEach((b,i)=>{ b.order = i; });
 }
 function boardPayload(id){
-  const b = boards.find(x=>x.id===id) || {};
-  const d = boardsData[id] || {nodes:[],connections:[]};
+  const b = state.boards.find(x=>x.id===id) || {};
+  const d = state.boardsData[id] || {nodes:[],connections:[]};
   return JSON.stringify({
     id, name:b.name||"", description:b.description||"",
     updated: new Date().toISOString(),
@@ -654,8 +638,8 @@ function indexPayload(){
   return JSON.stringify({
     version: 2,
     updated: new Date().toISOString(),
-    notebooks: notebooks,
-    boards: boards.map(b=>({id:b.id, name:b.name, description:b.description, notebookId:b.notebookId||null, order:(typeof b.order==="number"?b.order:0), pinned:!!b.pinned, file:boardFileName(b.id)}))
+    notebooks: state.notebooks,
+    boards: state.boards.map(b=>({id:b.id, name:b.name, description:b.description, notebookId:b.notebookId||null, order:(typeof b.order==="number"?b.order:0), pinned:!!b.pinned, file:boardFileName(b.id)}))
   }, null, 2);
 }
 
@@ -675,33 +659,33 @@ let corruptNotified = false;
 function notifyCorrupt(){
   if(corruptNotified) return;
   corruptNotified = true;
-  const n = corruptBoards.size;
+  const n = state.corruptBoards.size;
   setTimeout(()=>{
     showToast(n+" page"+(n>1?"s":"")+" couldn't be read \u2014 protected from overwrite");
-    console.warn("Corrupt/unreadable board ids (their files are left untouched so you can recover them):", [...corruptBoards]);
+    console.warn("Corrupt/unreadable board ids (their files are left untouched so you can recover them):", [...state.corruptBoards]);
   }, 400);
 }
 
 async function persistIndex(){
   try{
-    if(backend==="folder"){ await fsWrite("index.json", indexPayload()); showToast("Saved to folder"); }
-    else if(backend==="cloud"){ await cloudPersistIndex(); showToast("Saved to cloud"); }
-    else if(backend==="app"){ await window.storage.set(IDX_KEY, indexPayload(), false); showToast("Saved"); }
+    if(state.backend==="folder"){ await fsWrite("index.json", indexPayload()); showToast("Saved to folder"); }
+    else if(state.backend==="cloud"){ await cloudPersistIndex(); showToast("Saved to cloud"); }
+    else if(state.backend==="app"){ await window.storage.set(IDX_KEY, indexPayload(), false); showToast("Saved"); }
     else { showToast("Not saving \u2014 connect a folder"); }
   }catch(err){ console.error("index save", err); showToast("Save failed"); }
 }
 async function persistBoard(id){
   // never overwrite a file we couldn't read — the data on disk may be
   // recoverable and clobbering it with the in-memory (empty) version loses it
-  if(corruptBoards.has(id)){
+  if(state.corruptBoards.has(id)){
     showToast("Not saving this page \u2014 its file couldn't be read (protected)");
     return;
   }
   try{
-    if(backend==="folder"){ await fsWrite(boardFileName(id), boardPayload(id)); await fsWrite("index.json", indexPayload()); showToast("Saved to folder"); }
-    else if(backend==="cloud"){ await cloudPersistBoard(id); await cloudPersistIndex(); showToast("Saved to cloud"); }
-    else if(backend==="app"){
-      const payload = JSON.stringify(boardsData[id]);
+    if(state.backend==="folder"){ await fsWrite(boardFileName(id), boardPayload(id)); await fsWrite("index.json", indexPayload()); showToast("Saved to folder"); }
+    else if(state.backend==="cloud"){ await cloudPersistBoard(id); await cloudPersistIndex(); showToast("Saved to cloud"); }
+    else if(state.backend==="app"){
+      const payload = JSON.stringify(state.boardsData[id]);
       checkAppSize(payload);
       await window.storage.set("mindmap:board:"+id, payload, false); showToast("Saved");
     }
@@ -710,9 +694,9 @@ async function persistBoard(id){
 }
 async function persistDeleteBoard(id){
   try{
-    if(backend==="folder"){ await fsDelete(boardFileName(id)); await fsWrite("index.json", indexPayload()); }
-    else if(backend==="cloud"){ await cloudPersistDeleteBoard(id); }
-    else if(backend==="app"){ await window.storage.delete("mindmap:board:"+id, false); }
+    if(state.backend==="folder"){ await fsDelete(boardFileName(id)); await fsWrite("index.json", indexPayload()); }
+    else if(state.backend==="cloud"){ await cloudPersistDeleteBoard(id); }
+    else if(state.backend==="app"){ await window.storage.delete("mindmap:board:"+id, false); }
   }catch(err){}
 }
 
@@ -721,36 +705,36 @@ async function saveIndexNow(){ await persistIndex(); }
 async function saveBoardNow(id){ await persistBoard(id); }
 async function saveTypesNow(){
   try{
-    if(backend==="folder"){ await fsWrite("block-types.json", JSON.stringify(customTypes,null,2)); }
-    else if(backend==="cloud"){ await cloudSaveTypes(); }
-    else if(backend==="app"){ await window.storage.set(TYPES_KEY, JSON.stringify(customTypes), false); }
+    if(state.backend==="folder"){ await fsWrite("block-types.json", JSON.stringify(state.customTypes,null,2)); }
+    else if(state.backend==="cloud"){ await cloudSaveTypes(); }
+    else if(state.backend==="app"){ await window.storage.set(TYPES_KEY, JSON.stringify(state.customTypes), false); }
   }catch(err){ console.error("types save", err); }
 }
-function queueTypesSave(){ clearTimeout(saveTimers.__types); saveTimers.__types = setTimeout(saveTypesNow, 400); }
-function queueIndexSave(){ clearTimeout(saveTimers.__index); saveTimers.__index = setTimeout(saveIndexNow, 500); }
+function queueTypesSave(){ clearTimeout(state.saveTimers.__types); state.saveTimers.__types = setTimeout(saveTypesNow, 400); }
+function queueIndexSave(){ clearTimeout(state.saveTimers.__index); state.saveTimers.__index = setTimeout(saveIndexNow, 500); }
 function queueBoardSave(id){
-  if(id===currentBoardId && typeof recordChange==="function") recordChange();
+  if(id===state.currentBoardId && typeof recordChange==="function") recordChange();
   // If the user is actively editing a board whose file we refused to overwrite,
   // ask once whether to release the protection (they accept losing the old file)
   // so their new edits can start saving again.
-  if(corruptBoards.has(id) && !corruptPrompted.has(id)){
-    corruptPrompted.add(id);
+  if(state.corruptBoards.has(id) && !state.corruptPrompted.has(id)){
+    state.corruptPrompted.add(id);
     const ok = confirm(
       "This page's saved file couldn't be read, so saving has been paused to protect it.\n\n"+
       "Its file is still on disk (or in storage) exactly as it was, so you can back it up manually.\n\n"+
       "Start saving again from here? (Your current on-screen version will overwrite the unreadable file.)"
     );
-    if(ok){ corruptBoards.delete(id); }
+    if(ok){ state.corruptBoards.delete(id); }
     else { return; }
   }
-  clearTimeout(saveTimers[id]);
-  saveTimers[id] = setTimeout(()=>saveBoardNow(id), 500);
+  clearTimeout(state.saveTimers[id]);
+  state.saveTimers[id] = setTimeout(()=>saveBoardNow(id), 500);
 }
 
 async function openSavedBoardsDir(handle){
-  rootHandle = handle;
-  dirHandle = await handle.getDirectoryHandle("saved-boards", {create:true});
-  backend = "folder";
+  state.rootHandle = handle;
+  state.dirHandle = await handle.getDirectoryHandle("saved-boards", {create:true});
+  state.backend = "folder";
 }
 
 /* returns true if boards were loaded out of the folder */
@@ -760,27 +744,27 @@ async function readFromFolder(){
   let idx;
   try{ idx = JSON.parse(idxText); }catch(e){ return false; }
   if(!idx || !Array.isArray(idx.boards) || !idx.boards.length) return false;
-  boards = idx.boards.map(b=>({id:b.id, name:b.name, description:b.description||"", notebookId:b.notebookId||null, order:b.order, pinned:!!b.pinned}));
-  notebooks = Array.isArray(idx.notebooks) ? idx.notebooks.slice() : [];
+  state.boards = idx.boards.map(b=>({id:b.id, name:b.name, description:b.description||"", notebookId:b.notebookId||null, order:b.order, pinned:!!b.pinned}));
+  state.notebooks = Array.isArray(idx.notebooks) ? idx.notebooks.slice() : [];
   ensureNotebookStructure();
-  boardsData = {};
-  for(const b of boards){
+  state.boardsData = {};
+  for(const b of state.boards){
     const txt = await fsRead(boardFileName(b.id));
     const res = parseBoardText(txt);
-    if(!res.ok){ corruptBoards.add(b.id); console.warn("Board file unreadable, protecting it from overwrite:", boardFileName(b.id)); }
+    if(!res.ok){ state.corruptBoards.add(b.id); console.warn("Board file unreadable, protecting it from overwrite:", boardFileName(b.id)); }
     const d = res.data;
     d.nodes = (d.nodes||[]).map(migrateNode);
     d.connections = d.connections||[];
-    boardsData[b.id] = d;
+    state.boardsData[b.id] = d;
   }
-  currentBoardId = boards[0].id;
-  if(corruptBoards.size) notifyCorrupt();
+  state.currentBoardId = state.boards[0].id;
+  if(state.corruptBoards.size) notifyCorrupt();
   return true;
 }
 
 async function writeAllToFolder(){
   await fsWrite("index.json", indexPayload());
-  for(const b of boards){ await fsWrite(boardFileName(b.id), boardPayload(b.id)); }
+  for(const b of state.boards){ await fsWrite(boardFileName(b.id), boardPayload(b.id)); }
 }
 
 async function connectFolder(){
@@ -827,13 +811,13 @@ function updateStorageBar(){
   const bar = el("storageBar");
   if(!bar) return;
   let cls, label, sub;
-  if(backend==="folder"){
+  if(state.backend==="folder"){
     cls="ok"; label="Saving to folder";
-    sub=(rootHandle && rootHandle.name ? rootHandle.name+"/" : "")+"saved-boards/";
-  } else if(backend==="cloud"){
+    sub=(state.rootHandle && state.rootHandle.name ? state.rootHandle.name+"/" : "")+"saved-boards/";
+  } else if(state.backend==="cloud"){
     cls="ok"; label="Saving to cloud";
-    sub=(supabaseSession && supabaseSession.user) ? supabaseSession.user.email : "Supabase";
-  } else if(backend==="app"){
+    sub=(state.supabaseSession && state.supabaseSession.user) ? state.supabaseSession.user.email : "Supabase";
+  } else if(state.backend==="app"){
     cls="ok"; label="Saving in this browser";
     sub="Connect a folder to save real files";
   } else {
@@ -843,19 +827,19 @@ function updateStorageBar(){
   bar.className = "storage-bar "+cls;
   bar.querySelector(".sb-label").textContent = label;
   bar.querySelector(".sb-sub").textContent = sub;
-  el("connectFolderBtn").textContent = backend==="folder" ? "Change folder" : "Connect folder";
+  el("connectFolderBtn").textContent = state.backend==="folder" ? "Change folder" : "Connect folder";
 }
 
 /* ---------- export / import ---------- */
 function exportAll(){
   const payload = {
     version:2, exported:new Date().toISOString(),
-    blockTypes: customTypes,
-    notebooks: notebooks,
-    boards: boards.map(b=>({
+    blockTypes: state.customTypes,
+    notebooks: state.notebooks,
+    boards: state.boards.map(b=>({
       id:b.id, name:b.name, description:b.description||"", notebookId:b.notebookId||null, order:b.order, pinned:!!b.pinned,
-      nodes:(boardsData[b.id]||{}).nodes||[],
-      connections:(boardsData[b.id]||{}).connections||[]
+      nodes:(state.boardsData[b.id]||{}).nodes||[],
+      connections:(state.boardsData[b.id]||{}).connections||[]
     }))
   };
   const blob = new Blob([JSON.stringify(payload,null,2)], {type:"application/json"});
@@ -880,7 +864,7 @@ function importAll(file){
     if(payload.blockTypes){
       let added = 0;
       Object.keys(payload.blockTypes).forEach(id=>{
-        if(!customTypes[id]){ customTypes[id] = payload.blockTypes[id]; added++; }
+        if(!state.customTypes[id]){ state.customTypes[id] = payload.blockTypes[id]; added++; }
       });
       if(added){ queueTypesSave(); renderTypeToolbar(); }
       migrateLongtextKinds();
@@ -892,22 +876,22 @@ function importAll(file){
       payload.notebooks.forEach(onb=>{
         const nid = "nb_"+uid().slice(0,8);
         nbMap[onb.id] = nid;
-        notebooks.push({ id:nid, name:onb.name||"Imported notebook", collapsed:false });
+        state.notebooks.push({ id:nid, name:onb.name||"Imported notebook", collapsed:false });
       });
     } else {
       importNbId = "nb_"+uid().slice(0,8);
-      notebooks.push({ id:importNbId, name:"Imported", collapsed:false });
+      state.notebooks.push({ id:importNbId, name:"Imported", collapsed:false });
     }
     incoming.forEach(b=>{
       const id = uid();
-      const nbId = (b.notebookId && nbMap[b.notebookId]) ? nbMap[b.notebookId] : (importNbId || notebooks[notebooks.length-1].id);
-      boards.push({id, name:(b.name||"Imported page"), description:b.description||"", notebookId:nbId, order:(typeof b.order==="number"?b.order:boards.length), pinned:!!b.pinned});
-      boardsData[id] = { nodes:(b.nodes||[]).map(migrateNode), connections:b.connections||[] };
+      const nbId = (b.notebookId && nbMap[b.notebookId]) ? nbMap[b.notebookId] : (importNbId || state.notebooks[state.notebooks.length-1].id);
+      state.boards.push({id, name:(b.name||"Imported page"), description:b.description||"", notebookId:nbId, order:(typeof b.order==="number"?b.order:state.boards.length), pinned:!!b.pinned});
+      state.boardsData[id] = { nodes:(b.nodes||[]).map(migrateNode), connections:b.connections||[] };
     });
     ensureNotebookStructure();
     renderBoardList();
     await persistIndex();
-    for(const b of boards){ await persistBoard(b.id); }
+    for(const b of state.boards){ await persistBoard(b.id); }
     showToast("Imported");
   };
   reader.readAsText(file);
@@ -973,7 +957,7 @@ function groupFieldHtml(node, f){
 }
 
 function customBodyHtml(node){
-  const def = customTypes[node.type];
+  const def = state.customTypes[node.type];
   if(!def) return '<div class="node-body"><div style="color:var(--muted-2);font-size:12px;padding:6px">Unknown block type</div></div>';
   node.fields = node.fields || {};
   let html = '<div class="cf-wrap">';
@@ -1018,7 +1002,7 @@ function customBodyHtml(node){
 }
 
 function groupSummary(node, fieldKey){
-  const def = customTypes[node.type];
+  const def = state.customTypes[node.type];
   const f = def ? def.fields.find(x=>x.key===fieldKey) : null;
   if(!f) return "";
   const rows = Array.isArray(node.fields[fieldKey]) ? node.fields[fieldKey] : [];
@@ -1035,7 +1019,7 @@ function groupSummary(node, fieldKey){
 }
 
 function customSummary(node){
-  const def = customTypes[node.type];
+  const def = state.customTypes[node.type];
   if(!def) return "";
   const lines = [];
   def.fields.forEach(f=>{
@@ -1053,7 +1037,7 @@ function customSummary(node){
 }
 
 function wireCustomFields(div, node){
-  const def = customTypes[node.type];
+  const def = state.customTypes[node.type];
   if(!def) return;
   node.fields = node.fields || {};
   div.querySelectorAll("[data-fk]").forEach(fld=>{
@@ -1061,27 +1045,27 @@ function wireCustomFields(div, node){
     fld.addEventListener("pointerdown", e=>e.stopPropagation());
     fld.addEventListener("focus", ()=>selectNode(node.id));
     if(fld.classList.contains("cf-rich")){
-      fld.addEventListener("input", ()=>{ setFieldVal(node, key, fld.innerHTML); queueBoardSave(currentBoardId); });
-      fld.addEventListener("blur", ()=>{ const c=sanitizeHtml(fld.innerHTML); fld.innerHTML=c; setFieldVal(node, key, c); queueBoardSave(currentBoardId); });
+      fld.addEventListener("input", ()=>{ setFieldVal(node, key, fld.innerHTML); queueBoardSave(state.currentBoardId); });
+      fld.addEventListener("blur", ()=>{ const c=sanitizeHtml(fld.innerHTML); fld.innerHTML=c; setFieldVal(node, key, c); queueBoardSave(state.currentBoardId); });
       fld.addEventListener("paste",(e)=>{
         const txt = e.clipboardData ? e.clipboardData.getData("text/plain") : "";
         if(txt){ e.preventDefault(); e.stopPropagation(); document.execCommand("insertText", false, txt); }
       });
     } else if(fld.type==="checkbox"){
-      fld.addEventListener("change", ()=>{ setFieldVal(node, key, fld.checked); queueBoardSave(currentBoardId); });
+      fld.addEventListener("change", ()=>{ setFieldVal(node, key, fld.checked); queueBoardSave(state.currentBoardId); });
     } else if(fld.tagName==="TEXTAREA"){
       fld.addEventListener("input", ()=>{
         setFieldVal(node, key, fld.value);
         fld.style.height="auto"; fld.style.height=fld.scrollHeight+"px";
         measureListOffsets(); updateConnectionsTouching(node.id);
-        queueBoardSave(currentBoardId);
+        queueBoardSave(state.currentBoardId);
       });
     } else {
       fld.addEventListener("input", ()=>{
         setFieldVal(node, key, fld.value);
         const openBtn = div.querySelector('[data-open="'+key+'"]');
         if(openBtn) openBtn.classList.toggle("off", !fld.value);
-        queueBoardSave(currentBoardId);
+        queueBoardSave(state.currentBoardId);
       });
     }
   });
@@ -1113,7 +1097,7 @@ function wireCustomFields(div, node){
     fld.addEventListener("focus", ()=>selectNode(node.id));
     const commit = (value)=>{
       const rows = node.fields[gk];
-      if(rows && rows[ri]){ rows[ri][sk] = value; queueBoardSave(currentBoardId); }
+      if(rows && rows[ri]){ rows[ri][sk] = value; queueBoardSave(state.currentBoardId); }
     };
     if(fld.classList.contains("grich")){
       fld.addEventListener("input", ()=>{
@@ -1186,7 +1170,7 @@ function migrateNode(n){
   if(n.bodyHtml === undefined) n.bodyHtml = plainToHtml(n.body||"");
   if(isCustomType(n.type) && !n.fields) n.fields = {};
   if(isCustomType(n.type)){
-    const def = customTypes[n.type];
+    const def = state.customTypes[n.type];
     if(def) def.fields.forEach(f=>{
       if(f.kind==="group" && !Array.isArray(n.fields[f.key])) n.fields[f.key] = [];
     });
@@ -1210,14 +1194,14 @@ function migrateNode(n){
 
 async function loadCustomTypes(){
   try{
-    if(backend==="folder"){
+    if(state.backend==="folder"){
       const txt = await fsRead("block-types.json");
-      if(txt) customTypes = JSON.parse(txt);
-    } else if(backend==="app" && typeof window.storage!=="undefined" && window.storage){
+      if(txt) state.customTypes = JSON.parse(txt);
+    } else if(state.backend==="app" && typeof window.storage!=="undefined" && window.storage){
       const res = await window.storage.get(TYPES_KEY, false);
-      if(res && res.value) customTypes = JSON.parse(res.value);
+      if(res && res.value) state.customTypes = JSON.parse(res.value);
     }
-  }catch(err){ customTypes = customTypes || {}; }
+  }catch(err){ state.customTypes = state.customTypes || {}; }
   migrateLongtextKinds();
 }
 
@@ -1226,8 +1210,8 @@ async function loadCustomTypes(){
    Values are compatible (richValue coerces old plain text into HTML). */
 function migrateLongtextKinds(){
   let changed = false;
-  Object.keys(customTypes).forEach(id=>{
-    const t = customTypes[id];
+  Object.keys(state.customTypes).forEach(id=>{
+    const t = state.customTypes[id];
     (t.fields||[]).forEach(f=>{
       if(f.kind==="longtext"){ f.kind="richtext"; changed=true; }
       if(f.kind==="group"){
@@ -1247,49 +1231,49 @@ async function loadAll(){
   }
 
   // 2. fall back to Claude's storage if this page is running inside Claude
-  if(backend!=="folder"){
+  if(state.backend!=="folder"){
     if(typeof window.storage !== "undefined" && window.storage){
-      backend = "app";
+      state.backend = "app";
       try{
         const res = await window.storage.get(IDX_KEY, false);
         if(res && res.value) parseIndex(res.value);
-      }catch(err){ boards = []; }
+      }catch(err){ state.boards = []; }
     } else {
-      backend = "memory";
+      state.backend = "memory";
     }
   }
 
-  if(!boards.length){
+  if(!state.boards.length){
     ensureNotebookStructure();
     const id = uid();
-    boards = [{id, name:"My first mind map", description:"Sketch out how the pieces fit together.", notebookId:notebooks[0].id}];
-    boardsData[id] = { nodes:[{id:uid(), type:"header", x:1980, y:1420, w:260, h:56, title:"Central topic", body:"", color:"#ffffff"}], connections:[] };
-    currentBoardId = id;
+    state.boards = [{id, name:"My first mind map", description:"Sketch out how the pieces fit together.", notebookId:state.notebooks[0].id}];
+    state.boardsData[id] = { nodes:[{id:uid(), type:"header", x:1980, y:1420, w:260, h:56, title:"Central topic", body:"", color:"#ffffff"}], connections:[] };
+    state.currentBoardId = id;
     await saveIndexNow(); await saveBoardNow(id);
     return;
   }
   ensureNotebookStructure();
-  for(const b of boards){
+  for(const b of state.boards){
     let d = {nodes:[],connections:[]};
     try{
-      if(backend==="folder"){
+      if(state.backend==="folder"){
         const txt = await fsRead(boardFileName(b.id));
         const res = parseBoardText(txt);
-        if(!res.ok) corruptBoards.add(b.id);
+        if(!res.ok) state.corruptBoards.add(b.id);
         d = res.data;
-      } else if(backend==="app"){
+      } else if(state.backend==="app"){
         const res = await window.storage.get("mindmap:board:"+b.id, false);
         const parsed = parseBoardText(res && res.value);
-        if(!parsed.ok) corruptBoards.add(b.id);
+        if(!parsed.ok) state.corruptBoards.add(b.id);
         d = parsed.data;
       }
-    }catch(err){ corruptBoards.add(b.id); d = {nodes:[],connections:[]}; }
+    }catch(err){ state.corruptBoards.add(b.id); d = {nodes:[],connections:[]}; }
     d.nodes = (d.nodes||[]).map(migrateNode);
     d.connections = d.connections||[];
-    boardsData[b.id] = d;
+    state.boardsData[b.id] = d;
   }
-  currentBoardId = boards[0].id;
-  if(corruptBoards.size) notifyCorrupt();
+  state.currentBoardId = state.boards[0].id;
+  if(state.corruptBoards.size) notifyCorrupt();
 }
 
 /* ---------- sidebar ---------- */
@@ -1301,7 +1285,7 @@ let favCollapsed = false;
 function renderFavorites(){
   const wrap = el("favWrap");
   if(!wrap) return;
-  const favs = boards.filter(b=>b.pinned);
+  const favs = state.boards.filter(b=>b.pinned);
   if(!favs.length){ wrap.style.display = "none"; return; }
   wrap.style.display = "";
   wrap.classList.toggle("collapsed", favCollapsed);
@@ -1309,14 +1293,14 @@ function renderFavorites(){
 
   // order favorites the way they appear in their notebooks (pinned order)
   const ordered = [];
-  notebooks.forEach(nb=>{
+  state.notebooks.forEach(nb=>{
     boardsInNotebook(nb.id).forEach(b=>{ if(b.pinned) ordered.push({b, nb}); });
   });
   // include any pinned page whose notebook somehow isn't listed
-  favs.forEach(b=>{ if(!ordered.some(o=>o.b.id===b.id)) ordered.push({b, nb:notebooks.find(n=>n.id===b.notebookId)}); });
+  favs.forEach(b=>{ if(!ordered.some(o=>o.b.id===b.id)) ordered.push({b, nb:state.notebooks.find(n=>n.id===b.notebookId)}); });
 
   el("favList").innerHTML = ordered.map(({b, nb})=>
-    '<div class="fav-item '+(b.id===currentBoardId?"active":"")+'" data-id="'+b.id+'">' +
+    '<div class="fav-item '+(b.id===state.currentBoardId?"active":"")+'" data-id="'+b.id+'">' +
       '<span class="fav-dot">\u2605</span>' +
       '<span class="fav-name">'+escapeHtml(b.name||"Untitled")+'</span>' +
       (nb ? '<span class="fav-nb">'+escapeHtml(nb.name||"")+'</span>' : '') +
@@ -1335,11 +1319,11 @@ function renderBoardList(){
   renderFavorites();
   const host = treeEl();
   if(!host) return;
-  host.innerHTML = notebooks.map(nb=>{
+  host.innerHTML = state.notebooks.map(nb=>{
     const pages = boardsInNotebook(nb.id);
     const pagesHtml = pages.length
       ? pages.map(b=>
-          '<div class="board-item '+(b.id===currentBoardId?'active':'')+(b.pinned?' pinned':'')+'" draggable="true" data-id="'+b.id+'">' +
+          '<div class="board-item '+(b.id===state.currentBoardId?'active':'')+(b.pinned?' pinned':'')+'" draggable="true" data-id="'+b.id+'">' +
           (b.pinned?'<span class="pin-ico" title="Pinned">\u2605</span>':'') +
           '<span class="bname">'+escapeHtml(b.name||"Untitled")+'</span>' +
           '<button class="board-menu-btn" data-id="'+b.id+'" title="Page options">\u22ef</button></div>').join('')
@@ -1363,7 +1347,7 @@ function renderBoardList(){
   host.querySelectorAll(".nb-head").forEach(head=>{
     head.addEventListener("click",(e)=>{
       if(e.target.closest(".nb-actions")) return;
-      const nb = notebooks.find(n=>n.id===head.dataset.nb);
+      const nb = state.notebooks.find(n=>n.id===head.dataset.nb);
       if(nb){ nb.collapsed = !nb.collapsed; renderBoardList(); queueIndexSave(); }
     });
   });
@@ -1424,12 +1408,12 @@ function renderBoardList(){
       zone.closest(".nb").querySelector(".nb-head").classList.remove("drop-into");
       const pageId = e.dataTransfer.getData("text/plain");
       const nbId = zone.dataset.nb;
-      const b = boards.find(x=>x.id===pageId);
+      const b = state.boards.find(x=>x.id===pageId);
       if(b && nbId && b.notebookId!==nbId){
         b.notebookId = nbId;
         b.order = boardsInNotebook(nbId).length;   // drop at the end of the target notebook
         renumberNotebook(nbId);
-        const nb = notebooks.find(n=>n.id===nbId);
+        const nb = state.notebooks.find(n=>n.id===nbId);
         if(nb) nb.collapsed = false;
         renderBoardList(); queueIndexSave();
       }
@@ -1447,8 +1431,8 @@ function clearDropMarks(){
    so you can reorder within the pinned group or the unpinned group. */
 function reorderPage(pageId, targetId, below){
   if(pageId===targetId) return;
-  const b = boards.find(x=>x.id===pageId);
-  const t = boards.find(x=>x.id===targetId);
+  const b = state.boards.find(x=>x.id===pageId);
+  const t = state.boards.find(x=>x.id===targetId);
   if(!b || !t) return;
   b.notebookId = t.notebookId;
   b.pinned = !!t.pinned;   // land in the same (pinned/unpinned) group as the target
@@ -1462,7 +1446,7 @@ function reorderPage(pageId, targetId, below){
 }
 
 function togglePin(pageId){
-  const b = boards.find(x=>x.id===pageId);
+  const b = state.boards.find(x=>x.id===pageId);
   if(!b) return;
   b.pinned = !b.pinned;
   renumberNotebook(b.notebookId);
@@ -1471,7 +1455,7 @@ function togglePin(pageId){
 }
 
 function startRenameNotebook(id){
-  const nb = notebooks.find(n=>n.id===id);
+  const nb = state.notebooks.find(n=>n.id===id);
   if(!nb) return;
   const nameEl = treeEl().querySelector('.nb[data-nb="'+id+'"] .nb-name');
   if(!nameEl) return;
@@ -1486,36 +1470,36 @@ function startRenameNotebook(id){
 
 function newNotebook(){
   const nb = { id:"nb_"+uid().slice(0,8), name:"New Notebook", collapsed:false };
-  notebooks.push(nb);
+  state.notebooks.push(nb);
   renderBoardList(); queueIndexSave();
   startRenameNotebook(nb.id);
 }
 
 function deleteNotebook(id){
-  if(notebooks.length===1){ showToast("Keep at least one notebook"); return; }
+  if(state.notebooks.length===1){ showToast("Keep at least one notebook"); return; }
   const pages = boardsInNotebook(id);
-  const nb = notebooks.find(n=>n.id===id);
+  const nb = state.notebooks.find(n=>n.id===id);
   let msg = 'Delete notebook "'+(nb?nb.name:"")+'"?';
   if(pages.length){
-    const other = notebooks.find(n=>n.id!==id);
+    const other = state.notebooks.find(n=>n.id!==id);
     msg += "\n\nIts "+pages.length+" page(s) will move to \""+other.name+"\". (To delete the pages too, remove them first.)";
   }
   if(!confirm(msg)) return;
-  const fallback = notebooks.find(n=>n.id!==id).id;
+  const fallback = state.notebooks.find(n=>n.id!==id).id;
   pages.forEach(b=>b.notebookId=fallback);
-  notebooks = notebooks.filter(n=>n.id!==id);
+  state.notebooks = state.notebooks.filter(n=>n.id!==id);
   renderBoardList(); queueIndexSave();
 }
 
 function startRenameBoard(id, itemEl){
-  const b = boards.find(x=>x.id===id);
+  const b = state.boards.find(x=>x.id===id);
   itemEl.innerHTML = '<input value="'+escapeAttr(b.name||"")+'">';
   const input = itemEl.querySelector("input");
   input.focus(); input.select();
   function commit(){
     b.name = input.value.trim() || "Untitled";
     renderBoardList();
-    if(id===currentBoardId) el("boardTitle").value = b.name;
+    if(id===state.currentBoardId) el("boardTitle").value = b.name;
     queueIndexSave();
   }
   input.addEventListener("blur", commit);
@@ -1524,34 +1508,34 @@ function startRenameBoard(id, itemEl){
 }
 
 function switchBoard(id){
-  if(id===currentBoardId) return;
-  currentBoardId = id; selection.clear(); selectedConnId=null;
+  if(id===state.currentBoardId) return;
+  state.currentBoardId = id; state.selection.clear(); state.selectedConnId=null;
   renderBoardList(); renderBoardHeader(); centerView(); renderBoard();
   historyReset(id);
 }
 function newBoard(nbId){
-  if(!nbId || !notebooks.some(n=>n.id===nbId)){
+  if(!nbId || !state.notebooks.some(n=>n.id===nbId)){
     const cur = getBoard();
-    nbId = (cur && cur.notebookId) || notebooks[0].id;
+    nbId = (cur && cur.notebookId) || state.notebooks[0].id;
   }
   const id = uid();
-  boards.push({id, name:"Untitled page", description:"", notebookId:nbId, order:boardsInNotebook(nbId).length, pinned:false});
-  boardsData[id] = {nodes:[],connections:[]};
-  const nb = notebooks.find(n=>n.id===nbId); if(nb) nb.collapsed=false;
-  currentBoardId = id;
+  state.boards.push({id, name:"Untitled page", description:"", notebookId:nbId, order:boardsInNotebook(nbId).length, pinned:false});
+  state.boardsData[id] = {nodes:[],connections:[]};
+  const nb = state.notebooks.find(n=>n.id===nbId); if(nb) nb.collapsed=false;
+  state.currentBoardId = id;
   renderBoardList(); renderBoardHeader(); centerView(); renderBoard(); queueIndexSave();
   historyReset(id);
   el("boardTitle").focus();
 }
 function deleteBoard(id){
-  if(boards.length===1){ showToast("Can't delete your only page"); return; }
+  if(state.boards.length===1){ showToast("Can't delete your only page"); return; }
   if(!confirm("Delete this page and everything on it? This can't be undone.")) return;
-  const nbId = (boards.find(b=>b.id===id)||{}).notebookId;
-  boards = boards.filter(b=>b.id!==id);
-  delete boardsData[id];
+  const nbId = (state.boards.find(b=>b.id===id)||{}).notebookId;
+  state.boards = state.boards.filter(b=>b.id!==id);
+  delete state.boardsData[id];
   persistDeleteBoard(id);
   if(nbId) renumberNotebook(nbId);
-  if(currentBoardId===id) currentBoardId = boards[0].id;
+  if(state.currentBoardId===id) state.currentBoardId = state.boards[0].id;
   renderBoardList(); renderBoardHeader(); centerView(); renderBoard(); queueIndexSave();
 }
 
@@ -1559,9 +1543,9 @@ function deleteBoard(id){
    placed right after the original. Node ids are regenerated and connections
    rewired to the new ids so nothing points back at the source page. */
 function duplicatePage(id){
-  const src = boards.find(b=>b.id===id);
+  const src = state.boards.find(b=>b.id===id);
   if(!src) return;
-  const data = boardsData[id] || {nodes:[], connections:[]};
+  const data = state.boardsData[id] || {nodes:[], connections:[]};
   const idMap = {};
   const newNodes = (data.nodes||[]).map(n=>{
     const copy = JSON.parse(JSON.stringify(n));
@@ -1576,11 +1560,11 @@ function duplicatePage(id){
     return copy;
   });
   const newId = uid();
-  boards.push({ id:newId, name:(src.name||"Untitled")+" copy", description:src.description||"",
+  state.boards.push({ id:newId, name:(src.name||"Untitled")+" copy", description:src.description||"",
     notebookId:src.notebookId, order:(src.order||0)+0.5, pinned:false });
-  boardsData[newId] = { nodes:newNodes, connections:newConns };
+  state.boardsData[newId] = { nodes:newNodes, connections:newConns };
   renumberNotebook(src.notebookId);
-  currentBoardId = newId;
+  state.currentBoardId = newId;
   renderBoardList(); renderBoardHeader(); centerView(); renderBoard(); queueIndexSave(); saveBoardNow(newId);
   historyReset(newId);
   showToast("Page duplicated");
@@ -1597,7 +1581,7 @@ function pageMenuOutside(e){
 }
 function openPageMenu(pageId, x, y){
   closePageMenu();
-  const b = boards.find(p=>p.id===pageId);
+  const b = state.boards.find(p=>p.id===pageId);
   if(!b) return;
   const menu = document.createElement("div");
   menu.id = "pageMenu"; menu.className = "page-menu";
@@ -1673,7 +1657,7 @@ function toggleSearch(){
 function renderSearchScopes(){
   const wrap = el("searchScopes");
   const cur = getBoard();
-  const curNb = cur ? notebooks.find(n=>n.id===cur.notebookId) : null;
+  const curNb = cur ? state.notebooks.find(n=>n.id===cur.notebookId) : null;
   const chips = [{mode:"all", id:null, label:"All notebooks"}];
   if(curNb) chips.push({mode:"notebook", id:curNb.id, label:curNb.name});
   if(cur) chips.push({mode:"page", id:cur.id, label:"This page"});
@@ -1692,13 +1676,13 @@ function renderSearchScopes(){
 
 function boardsInScope(){
   if(searchScope.mode==="page"){
-    const b = boards.find(x=>x.id===searchScope.id) || getBoard();
+    const b = state.boards.find(x=>x.id===searchScope.id) || getBoard();
     return b ? [b] : [];
   }
   if(searchScope.mode==="notebook"){
-    return boards.filter(b=>b.notebookId===searchScope.id);
+    return state.boards.filter(b=>b.notebookId===searchScope.id);
   }
-  return boards;
+  return state.boards;
 }
 
 function nodeHaystack(n){
@@ -1747,8 +1731,8 @@ function runSearch(){
   const ql = q.toLowerCase();
   const results = [];
   boardsInScope().forEach(b=>{
-    const nb = notebooks.find(n=>n.id===b.notebookId);
-    const data = boardsData[b.id] || {nodes:[]};
+    const nb = state.notebooks.find(n=>n.id===b.notebookId);
+    const data = state.boardsData[b.id] || {nodes:[]};
     (data.nodes||[]).forEach(n=>{
       const {hay, src} = nodeHaystack(n);
       if(hay.toLowerCase().indexOf(ql)>-1){
@@ -1791,17 +1775,17 @@ el("searchClose").addEventListener("click", closeSearch);
 el("searchOverlay").addEventListener("click",(e)=>{ if(e.target===el("searchOverlay")) closeSearch(); });
 
 function goToNode(boardId, nodeId){
-  if(boardId!==currentBoardId){
-    currentBoardId = boardId; selection.clear(); selectedConnId=null;
+  if(boardId!==state.currentBoardId){
+    state.currentBoardId = boardId; state.selection.clear(); state.selectedConnId=null;
     renderBoardList(); renderBoardHeader(); renderBoard();
     historyReset(boardId);
   }
   const node = findNode(nodeId);
   if(!node) return;
   const rect = viewport.getBoundingClientRect();
-  view.scale = 1;
-  view.x = rect.width/2 - (node.x+node.w/2);
-  view.y = rect.height/2 - (node.y+node.h/2);
+  state.view.scale = 1;
+  state.view.x = rect.width/2 - (node.x+node.w/2);
+  state.view.y = rect.height/2 - (node.y+node.h/2);
   applyTransform();
   const nodeEl = canvasInner.querySelector('.node[data-id="'+nodeId+'"]');
   if(nodeEl){
@@ -1813,20 +1797,20 @@ function goToNode(boardId, nodeId){
 
 /* ---------- view ---------- */
 function applyTransform(){
-  canvasInner.style.transform = "translate("+view.x+"px,"+view.y+"px) scale("+view.scale+")";
-  el("zoomPct").textContent = Math.round(view.scale*100)+"%";
+  canvasInner.style.transform = "translate("+state.view.x+"px,"+state.view.y+"px) scale("+state.view.scale+")";
+  el("zoomPct").textContent = Math.round(state.view.scale*100)+"%";
 }
 function centerView(){
   const rect = viewport.getBoundingClientRect();
-  view.scale = 1; view.x = rect.width/2-2100; view.y = rect.height/2-1500;
+  state.view.scale = 1; state.view.x = rect.width/2-2100; state.view.y = rect.height/2-1500;
   applyTransform();
 }
 function zoomAt(clientX, clientY, factor){
   const rect = viewport.getBoundingClientRect();
   const mx=clientX-rect.left, my=clientY-rect.top;
-  const cx=(mx-view.x)/view.scale, cy=(my-view.y)/view.scale;
-  const ns = Math.min(2.2, Math.max(0.35, view.scale*factor));
-  view.x = mx-cx*ns; view.y = my-cy*ns; view.scale = ns;
+  const cx=(mx-state.view.x)/state.view.scale, cy=(my-state.view.y)/state.view.scale;
+  const ns = Math.min(2.2, Math.max(0.35, state.view.scale*factor));
+  state.view.x = mx-cx*ns; state.view.y = my-cy*ns; state.view.scale = ns;
   applyTransform();
 }
 el("zoomIn").addEventListener("click",()=>{const r=viewport.getBoundingClientRect();zoomAt(r.left+r.width/2,r.top+r.height/2,1.2);});
@@ -1840,9 +1824,9 @@ viewport.addEventListener("wheel",(e)=>{
 
 function clientToCanvas(clientX, clientY){
   const rect = viewport.getBoundingClientRect();
-  return { x:(clientX-rect.left-view.x)/view.scale, y:(clientY-rect.top-view.y)/view.scale };
+  return { x:(clientX-rect.left-state.view.x)/state.view.scale, y:(clientY-rect.top-state.view.y)/state.view.scale };
 }
-viewport.addEventListener("pointermove",(e)=>{ cursorCanvas = clientToCanvas(e.clientX,e.clientY); });
+viewport.addEventListener("pointermove",(e)=>{ state.cursorCanvas = clientToCanvas(e.clientX,e.clientY); });
 
 /* right button anywhere on the canvas = rubber-band select.
    Registered in the capture phase so it wins even over a box. */
@@ -1858,8 +1842,8 @@ viewport.addEventListener("pointerdown",(e)=>{
   marqueeEl.style.left = c.x+"px"; marqueeEl.style.top = c.y+"px";
   marqueeEl.style.width="0px"; marqueeEl.style.height="0px";
   canvasInner.appendChild(marqueeEl);
-  dragState = { mode:"marquee", startCx:c.x, startCy:c.y,
-    additive:(e.ctrlKey||e.metaKey||e.shiftKey), base:new Set(selection) };
+  state.dragState = { mode:"marquee", startCx:c.x, startCy:c.y,
+    additive:(e.ctrlKey||e.metaKey||e.shiftKey), base:new Set(state.selection) };
   viewport.setPointerCapture(e.pointerId);
 }, true);
 
@@ -1869,53 +1853,53 @@ viewport.addEventListener("pointerdown",(e)=>{
   if(e.target!==viewport && e.target!==canvasInner && e.target.id!=="connSvg" && e.target.tagName!=="svg") return;
   deselectAll();
   viewport.classList.add("panning");
-  dragState = { mode:"pan", startX:e.clientX, startY:e.clientY, ox:view.x, oy:view.y };
+  state.dragState = { mode:"pan", startX:e.clientX, startY:e.clientY, ox:state.view.x, oy:state.view.y };
   viewport.setPointerCapture(e.pointerId);
 });
 
 document.addEventListener("pointermove",(e)=>{
-  if(!dragState) return;
-  if(dragState.mode==="pan"){
-    view.x = dragState.ox+(e.clientX-dragState.startX);
-    view.y = dragState.oy+(e.clientY-dragState.startY);
+  if(!state.dragState) return;
+  if(state.dragState.mode==="pan"){
+    state.view.x = state.dragState.ox+(e.clientX-state.dragState.startX);
+    state.view.y = state.dragState.oy+(e.clientY-state.dragState.startY);
     applyTransform();
-  } else if(dragState.mode==="marquee"){
+  } else if(state.dragState.mode==="marquee"){
     const c = clientToCanvas(e.clientX, e.clientY);
-    const x = Math.min(c.x, dragState.startCx), y = Math.min(c.y, dragState.startCy);
-    const w = Math.abs(c.x-dragState.startCx), h = Math.abs(c.y-dragState.startCy);
+    const x = Math.min(c.x, state.dragState.startCx), y = Math.min(c.y, state.dragState.startCy);
+    const w = Math.abs(c.x-state.dragState.startCx), h = Math.abs(c.y-state.dragState.startCy);
     marqueeEl.style.left=x+"px"; marqueeEl.style.top=y+"px";
     marqueeEl.style.width=w+"px"; marqueeEl.style.height=h+"px";
     const hiddenNow = hiddenNodeIds();
     const hits = getData().nodes.filter(n=>
       !hiddenNow.has(n.id) &&
       n.x < x+w && n.x+n.w > x && n.y < y+h && n.y+n.h > y).map(n=>n.id);
-    const next = dragState.additive ? new Set([...dragState.base, ...hits]) : new Set(hits);
-    selection = next;
+    const next = state.dragState.additive ? new Set([...state.dragState.base, ...hits]) : new Set(hits);
+    state.selection = next;
     applySelectionClasses();
-  } else if(dragState.mode==="drag"){
-    const dx=(e.clientX-dragState.startX)/view.scale, dy=(e.clientY-dragState.startY)/view.scale;
-    dragState.moving.forEach(m=>{
+  } else if(state.dragState.mode==="drag"){
+    const dx=(e.clientX-state.dragState.startX)/state.view.scale, dy=(e.clientY-state.dragState.startY)/state.view.scale;
+    state.dragState.moving.forEach(m=>{
       m.node.x = m.ox+dx; m.node.y = m.oy+dy;
       m.el.style.left = m.node.x+"px";
       m.el.style.top = m.node.y+"px";
       updateConnectionsTouching(m.node.id);
     });
     fitCanvasBounds();
-  } else if(dragState.mode==="resize"){
-    const dx=(e.clientX-dragState.startX)/view.scale, dy=(e.clientY-dragState.startY)/view.scale;
-    dragState.node.w = Math.max(150, dragState.ow+dx);
-    dragState.el.style.width = dragState.node.w+"px";
-    const autoH = (dragState.node.type==="list" || dragState.node.type==="ticket" || dragState.node.type==="week" || isCustomType(dragState.node.type));
+  } else if(state.dragState.mode==="resize"){
+    const dx=(e.clientX-state.dragState.startX)/state.view.scale, dy=(e.clientY-state.dragState.startY)/state.view.scale;
+    state.dragState.node.w = Math.max(150, state.dragState.ow+dx);
+    state.dragState.el.style.width = state.dragState.node.w+"px";
+    const autoH = (state.dragState.node.type==="list" || state.dragState.node.type==="ticket" || state.dragState.node.type==="week" || isCustomType(state.dragState.node.type));
     if(!autoH){
-      dragState.node.h = Math.max(50, dragState.oh+dy);
-      dragState.el.style.height = dragState.node.h+"px";
+      state.dragState.node.h = Math.max(50, state.dragState.oh+dy);
+      state.dragState.el.style.height = state.dragState.node.h+"px";
     } else {
-      dragState.node.h = dragState.el.offsetHeight;
+      state.dragState.node.h = state.dragState.el.offsetHeight;
     }
-    updateConnectionsTouching(dragState.node.id);
-  } else if(dragState.mode==="connect"){
+    updateConnectionsTouching(state.dragState.node.id);
+  } else if(state.dragState.mode==="connect"){
     const c = clientToCanvas(e.clientX,e.clientY);
-    cursorCanvas = c;
+    state.cursorCanvas = c;
     const line = el("tempConnLine");
     if(line){ line.setAttribute("x2",c.x); line.setAttribute("y2",c.y); }
     highlightDropTarget(e.clientX, e.clientY);
@@ -1933,34 +1917,34 @@ function highlightDropTarget(clientX, clientY){
   const row = t.closest(".list-row");
   if(row){ row.classList.add("row-target"); return; }
   const nodeEl = t.closest(".node");
-  if(nodeEl && nodeEl.dataset.id !== dragState.fromId) nodeEl.classList.add("drop-target");
+  if(nodeEl && nodeEl.dataset.id !== state.dragState.fromId) nodeEl.classList.add("drop-target");
 }
 
 document.addEventListener("pointerup",(e)=>{
-  if(!dragState) return;
-  if(dragState.mode==="pan") viewport.classList.remove("panning");
-  if(dragState.mode==="marquee"){
+  if(!state.dragState) return;
+  if(state.dragState.mode==="pan") viewport.classList.remove("panning");
+  if(state.dragState.mode==="marquee"){
     if(marqueeEl){ marqueeEl.remove(); marqueeEl=null; }
     applySelectionClasses();
     renderConnLabelsAndDelete();
-    dragState = null;
+    state.dragState = null;
     return;
   }
-  if(dragState.mode==="drag"){
+  if(state.dragState.mode==="drag"){
     measureListOffsets();
-    dragState.moving.forEach(m=>updateConnectionsTouching(m.node.id));
-    queueBoardSave(currentBoardId);
+    state.dragState.moving.forEach(m=>updateConnectionsTouching(m.node.id));
+    queueBoardSave(state.currentBoardId);
   }
-  if(dragState.mode==="resize"){
+  if(state.dragState.mode==="resize"){
     measureListOffsets();
-    updateConnectionsTouching(dragState.node.id);
-    queueBoardSave(currentBoardId);
+    updateConnectionsTouching(state.dragState.node.id);
+    queueBoardSave(state.currentBoardId);
   }
-  if(dragState.mode==="connect"){
+  if(state.dragState.mode==="connect"){
     endConnectDrag(e.clientX, e.clientY);
     return;
   }
-  dragState = null;
+  state.dragState = null;
 });
 
 function fromItemLabel(from){
@@ -1972,7 +1956,7 @@ function fromItemLabel(from){
     const parts = from.fromItem.split(":");
     const fieldKey = parts[1], ri = parseInt(parts[2],10);
     const rows = n.fields ? n.fields[fieldKey] : null;
-    const def = customTypes[n.type];
+    const def = state.customTypes[n.type];
     const f = def ? def.fields.find(x=>x.key===fieldKey) : null;
     if(rows && rows[ri] && f && f.subfields){
       for(const sf of f.subfields){
@@ -1992,7 +1976,7 @@ function fromItemLabel(from){
 }
 
 function endConnectDrag(clientX, clientY){
-  const from = dragState;
+  const from = state.dragState;
   cleanupConnectVisuals();
   const target = document.elementFromPoint(clientX, clientY);
   const nodeEl = target ? target.closest(".node") : null;
@@ -2006,13 +1990,13 @@ function endConnectDrag(clientX, clientY){
     else if(tickRowEl && tickRowEl.closest(".node")===nodeEl) toItem = parseInt(tickRowEl.dataset.idx,10);
     else if(groupRowEl && groupRowEl.closest(".node")===nodeEl) toItem = groupKey(groupRowEl.dataset.gk, parseInt(groupRowEl.dataset.ri,10));
     createConnection(from.fromId, from.fromItem, nodeEl.dataset.id, toItem);
-    dragState = null;
+    state.dragState = null;
   } else if(!nodeEl){
     // dropped on empty canvas: open a searchable picker to choose the block type
-    dragState = null;
+    state.dragState = null;
     openNodePicker(from, clientX, clientY);
   } else {
-    dragState = null;
+    state.dragState = null;
   }
 }
 
@@ -2061,7 +2045,7 @@ function renderPickerList(query){
     '<div class="picker-opt'+(i===pickerState.active?" active":"")+'" data-i="'+i+'">' +
       '<span class="sw" style="background:'+t.accent+'"></span>' +
       '<span class="pk-name">'+escapeHtml(t.name)+'</span>' +
-      (customTypes[t.type] && !customTypes[t.type].builtin ? '<span class="pk-tag">custom</span>' : '') +
+      (state.customTypes[t.type] && !state.customTypes[t.type].builtin ? '<span class="pk-tag">custom</span>' : '') +
     '</div>').join('');
   list.querySelectorAll(".picker-opt").forEach(opt=>{
     opt.addEventListener("mouseenter",()=>{ pickerState.active = parseInt(opt.dataset.i,10); highlightPicker(); });
@@ -2114,7 +2098,7 @@ function cleanupConnectVisuals(){
 }
 
 function startConnectDrag(fromId, fromItem, startX, startY){
-  dragState = { mode:"connect", fromId, fromItem };
+  state.dragState = { mode:"connect", fromId, fromItem };
   viewport.classList.add("linking");
   const line = document.createElementNS("http://www.w3.org/2000/svg","line");
   line.id="tempConnLine";
@@ -2131,7 +2115,7 @@ function startConnectDrag(fromId, fromItem, startX, startY){
 /* ---------- nodes ---------- */
 function createNode(type, cx, cy, opts){
   opts = opts || {};
-  const def = customTypes[type];
+  const def = state.customTypes[type];
   const size = def ? [def.width||240, 120] : (DEFAULT_SIZE[type] || [220,140]);
   const node = {
     id: uid(), type,
@@ -2154,7 +2138,7 @@ function createNode(type, cx, cy, opts){
   };
   getData().nodes.push(node);
   renderBoard();
-  queueBoardSave(currentBoardId);
+  queueBoardSave(state.currentBoardId);
   if(!opts.silent) focusNodeTitle(node.id);
   return node;
 }
@@ -2166,20 +2150,20 @@ function focusNodeTitle(id){
 
 function spawnAtCursor(type){
   if(type==="image"){
-    const c = {x:cursorCanvas.x, y:cursorCanvas.y};
+    const c = {x:state.cursorCanvas.x, y:state.cursorCanvas.y};
     imgFileInput.onchange = (e)=>{
       const file = e.target.files[0];
       if(file) processImageFile(file,(dataUrl,w,h)=>{
         const node = createNode("image", c.x, c.y, {silent:true});
         node.image = dataUrl; node.w = Math.min(320,w); node.h = node.w*(h/w);
-        renderBoard(); queueBoardSave(currentBoardId);
+        renderBoard(); queueBoardSave(state.currentBoardId);
       });
       imgFileInput.value=""; imgFileInput.onchange=null;
     };
     imgFileInput.click();
     return null;
   }
-  return createNode(type, cursorCanvas.x, cursorCanvas.y);
+  return createNode(type, state.cursorCanvas.x, state.cursorCanvas.y);
 }
 
 document.querySelectorAll(".add-btn[data-type]").forEach(btn=>{
@@ -2191,7 +2175,7 @@ document.querySelectorAll(".add-btn[data-type]").forEach(btn=>{
 
 function viewportCenterCanvasCoords(){
   const rect = viewport.getBoundingClientRect();
-  return { x:(rect.width/2-view.x)/view.scale, y:(rect.height/2-view.y)/view.scale };
+  return { x:(rect.width/2-state.view.x)/state.view.scale, y:(rect.height/2-state.view.y)/state.view.scale };
 }
 
 el("addImageBtn").addEventListener("click", ()=>{
@@ -2201,7 +2185,7 @@ el("addImageBtn").addEventListener("click", ()=>{
       const c = viewportCenterCanvasCoords();
       const node = createNode("image", c.x, c.y, {silent:true});
       node.image = dataUrl; node.w = Math.min(320,w); node.h = node.w*(h/w);
-      renderBoard(); queueBoardSave(currentBoardId);
+      renderBoard(); queueBoardSave(state.currentBoardId);
     });
     imgFileInput.value=""; imgFileInput.onchange=null;
   };
@@ -2228,17 +2212,17 @@ function deleteNode(id){
   const data = getData();
   data.nodes = data.nodes.filter(n=>n.id!==id);
   data.connections = data.connections.filter(c=>c.from!==id && c.to!==id);
-  selection.delete(id);
-  renderBoard(); queueBoardSave(currentBoardId);
+  state.selection.delete(id);
+  renderBoard(); queueBoardSave(state.currentBoardId);
 }
 function deleteSelectedNodes(){
-  const ids = new Set(selection);
+  const ids = new Set(state.selection);
   if(!ids.size) return;
   const data = getData();
   data.nodes = data.nodes.filter(n=>!ids.has(n.id));
   data.connections = data.connections.filter(c=>!ids.has(c.from) && !ids.has(c.to));
-  selection.clear();
-  renderBoard(); queueBoardSave(currentBoardId);
+  state.selection.clear();
+  renderBoard(); queueBoardSave(state.currentBoardId);
 }
 function duplicateNode(id){
   const n = findNode(id);
@@ -2246,7 +2230,7 @@ function duplicateNode(id){
   const copy = JSON.parse(JSON.stringify(n));
   copy.id = uid(); copy.x = n.x+24; copy.y = n.y+24;
   getData().nodes.push(copy);
-  renderBoard(); queueBoardSave(currentBoardId);
+  renderBoard(); queueBoardSave(state.currentBoardId);
 }
 /* ---------- collapse ----------
    A box with outgoing connections can be collapsed from its head. Everything
@@ -2281,10 +2265,10 @@ function toggleCollapse(id){
   if(!n) return;
   n.collapsed = !n.collapsed;
   if(n.collapsed){
-    descendantsOf(id).forEach(d=>selection.delete(d));
+    descendantsOf(id).forEach(d=>state.selection.delete(d));
   }
   renderBoard();
-  queueBoardSave(currentBoardId);
+  queueBoardSave(state.currentBoardId);
 }
 
 /* ---------- undo / redo ----------
@@ -2303,7 +2287,7 @@ function historyReset(boardId){
   lastSnapshots[boardId] = snapshot();
 }
 function recordChange(){
-  const boardId = currentBoardId;
+  const boardId = state.currentBoardId;
   clearTimeout(historyTimer);
   historyTimer = setTimeout(()=>{
     const cur = snapshot();
@@ -2320,14 +2304,14 @@ function restoreSnapshot(json){
   const d = getData();
   d.nodes = p.nodes;
   d.connections = p.connections;
-  selection.clear();
-  selectedConnId = null;
+  state.selection.clear();
+  state.selectedConnId = null;
   renderBoard();
-  persistBoard(currentBoardId);
+  persistBoard(state.currentBoardId);
 }
 function undo(){
   clearTimeout(historyTimer);
-  const boardId = currentBoardId;
+  const boardId = state.currentBoardId;
   const stack = undoStacks[boardId] || [];
   // fold in any change that hasn't been committed to history yet
   const cur = snapshot();
@@ -2344,7 +2328,7 @@ function undo(){
 }
 function redo(){
   clearTimeout(historyTimer);
-  const boardId = currentBoardId;
+  const boardId = state.currentBoardId;
   const stack = redoStacks[boardId] || [];
   if(!stack.length){ showToast("Nothing to redo"); return; }
   (undoStacks[boardId] || (undoStacks[boardId]=[])).push(snapshot());
@@ -2355,31 +2339,31 @@ function redo(){
 }
 
 function deselectAll(){
-  selection.clear(); selectedConnId=null;
+  state.selection.clear(); state.selectedConnId=null;
   canvasInner.querySelectorAll(".node.selected").forEach(n=>n.classList.remove("selected"));
   renderConnections();
 }
 function applySelectionClasses(){
-  canvasInner.querySelectorAll(".node").forEach(n=>n.classList.toggle("selected", selection.has(n.dataset.id)));
+  canvasInner.querySelectorAll(".node").forEach(n=>n.classList.toggle("selected", state.selection.has(n.dataset.id)));
 }
 function selectNode(id, additive){
   if(additive){
-    if(selection.has(id)) selection.delete(id); else selection.add(id);
+    if(state.selection.has(id)) state.selection.delete(id); else state.selection.add(id);
   } else {
-    if(!selection.has(id)){ selection.clear(); selection.add(id); }
+    if(!state.selection.has(id)){ state.selection.clear(); state.selection.add(id); }
   }
-  selectedConnId = null;
+  state.selectedConnId = null;
   applySelectionClasses();
   renderConnLabelsAndDelete();
 }
 function setSelection(ids){
-  selection = new Set(ids);
-  selectedConnId = null;
+  state.selection = new Set(ids);
+  state.selectedConnId = null;
   applySelectionClasses();
   renderConnLabelsAndDelete();
 }
 function onlySelected(){
-  return selection.size===1 ? findNode(selection.values().next().value) : null;
+  return state.selection.size===1 ? findNode(state.selection.values().next().value) : null;
 }
 
 /* ---------- list item helpers ---------- */
@@ -2409,7 +2393,7 @@ function shiftGroupConnections(node, fieldKey, at, delta){
   });
 }
 function addGroupRow(node, fieldKey, afterIdx){
-  const def = customTypes[node.type];
+  const def = state.customTypes[node.type];
   const f = def ? def.fields.find(x=>x.key===fieldKey) : null;
   if(!f) return;
   if(!Array.isArray(node.fields[fieldKey])) node.fields[fieldKey] = [];
@@ -2417,7 +2401,7 @@ function addGroupRow(node, fieldKey, afterIdx){
   const at = (afterIdx===undefined||afterIdx===null) ? rows.length : afterIdx+1;
   shiftGroupConnections(node, fieldKey, at, +1);
   rows.splice(at, 0, blankGroupRow(f.subfields));
-  renderBoard(); queueBoardSave(currentBoardId);
+  renderBoard(); queueBoardSave(state.currentBoardId);
   const cell = canvasInner.querySelector('.node[data-id="'+node.id+'"] .group-row[data-gk="'+fieldKey+'"][data-ri="'+at+'"] .gsub');
   if(cell) cell.focus();
 }
@@ -2431,7 +2415,7 @@ function removeGroupRow(node, fieldKey, idx){
     (c.from===node.id && c.fromItem===k) || (c.to===node.id && c.toItem===k)));
   shiftGroupConnections(node, fieldKey, idx, -1);
   rows.splice(idx,1);
-  renderBoard(); queueBoardSave(currentBoardId);
+  renderBoard(); queueBoardSave(state.currentBoardId);
 }
 function addListItem(node, afterIdx){
   const at = (afterIdx===undefined || afterIdx===null) ? node.items.length : afterIdx+1;
@@ -2440,7 +2424,7 @@ function addListItem(node, afterIdx){
     if(c.from===node.id && c.fromItem!==null && c.fromItem>=at) c.fromItem++;
     if(c.to===node.id && c.toItem!==null && c.toItem>=at) c.toItem++;
   });
-  renderBoard(); queueBoardSave(currentBoardId);
+  renderBoard(); queueBoardSave(state.currentBoardId);
   const input = canvasInner.querySelector('.node[data-id="'+node.id+'"] .list-row[data-idx="'+at+'"] .list-input');
   if(input) input.focus();
 }
@@ -2451,12 +2435,12 @@ function addTicketRow(node, afterIdx){
     if(c.from===node.id && c.fromItem!==null && c.fromItem>=at) c.fromItem++;
     if(c.to===node.id && c.toItem!==null && c.toItem>=at) c.toItem++;
   });
-  renderBoard(); queueBoardSave(currentBoardId);
+  renderBoard(); queueBoardSave(state.currentBoardId);
   const f = canvasInner.querySelector('.node[data-id="'+node.id+'"] .ticket-row[data-idx="'+at+'"] .tr-no');
   if(f) f.focus();
 }
 function removeTicketRow(node, idx){
-  if(node.tickets.length===1){ node.tickets[0]=blankTicket(); renderBoard(); queueBoardSave(currentBoardId); return; }
+  if(node.tickets.length===1){ node.tickets[0]=blankTicket(); renderBoard(); queueBoardSave(state.currentBoardId); return; }
   node.tickets.splice(idx,1);
   const data = getData();
   data.connections = data.connections.filter(c=>
@@ -2465,11 +2449,11 @@ function removeTicketRow(node, idx){
     if(c.from===node.id && c.fromItem!==null && c.fromItem>idx) c.fromItem--;
     if(c.to===node.id && c.toItem!==null && c.toItem>idx) c.toItem--;
   });
-  renderBoard(); queueBoardSave(currentBoardId);
+  renderBoard(); queueBoardSave(state.currentBoardId);
 }
 
 function removeListItem(node, idx){
-  if(node.items.length===1){ node.items[0]=""; renderBoard(); queueBoardSave(currentBoardId); return; }
+  if(node.items.length===1){ node.items[0]=""; renderBoard(); queueBoardSave(state.currentBoardId); return; }
   node.items.splice(idx,1);
   const data = getData();
   data.connections = data.connections.filter(c=>
@@ -2478,13 +2462,13 @@ function removeListItem(node, idx){
     if(c.from===node.id && c.fromItem!==null && c.fromItem>idx) c.fromItem--;
     if(c.to===node.id && c.toItem!==null && c.toItem>idx) c.toItem--;
   });
-  renderBoard(); queueBoardSave(currentBoardId);
+  renderBoard(); queueBoardSave(state.currentBoardId);
 }
 
 /* ---------- node element ---------- */
 function nodeElement(node){
   const div = document.createElement("div");
-  div.className = "node type-"+node.type + (selection.has(node.id)?" selected":"");
+  div.className = "node type-"+node.type + (state.selection.has(node.id)?" selected":"");
   div.dataset.id = node.id;
   div.style.left = node.x+"px"; div.style.top = node.y+"px"; div.style.width = node.w+"px";
   if(node.type!=="list" && node.type!=="ticket" && node.type!=="week" && !isCustomType(node.type)) div.style.height = node.h+"px";
@@ -2542,7 +2526,7 @@ function nodeElement(node){
     ? '<div class="color-row">'+COLORS.map(c=>'<button class="swatch '+(node.color===c?'active':'')+'" data-color="'+c+'" style="background:'+c+'"></button>').join('')+'</div>'
     : '';
 
-  const defForBar = customTypes[node.type];
+  const defForBar = state.customTypes[node.type];
   const hasRich = (node.type==="week") ||
     (defForBar && defForBar.fields.some(f=>
       f.kind==="richtext" || f.kind==="longtext" ||
@@ -2597,21 +2581,21 @@ function nodeElement(node){
     if(e.button!==0) return;
     if(e.target.closest("input,textarea,button,.resize-handle,.conn-handle,.row-conn")) return;
     selectNode(node.id, e.ctrlKey||e.metaKey||e.shiftKey);
-    const ids = selection.has(node.id) && selection.size>1 ? [...selection] : [node.id];
+    const ids = state.selection.has(node.id) && state.selection.size>1 ? [...state.selection] : [node.id];
     const moving = [];
     ids.forEach(id=>{
       const n = findNode(id);
       const nel = canvasInner.querySelector('.node[data-id="'+id+'"]');
       if(n && nel) moving.push({node:n, el:nel, ox:n.x, oy:n.y});
     });
-    dragState = { mode:"drag", moving, startX:e.clientX, startY:e.clientY };
+    state.dragState = { mode:"drag", moving, startX:e.clientX, startY:e.clientY };
     div.setPointerCapture(e.pointerId);
     e.stopPropagation();
   });
 
   const titleInput = div.querySelector(".node-title");
   titleInput.addEventListener("pointerdown", e=>e.stopPropagation());
-  titleInput.addEventListener("input", e=>{ node.title=e.target.value; queueBoardSave(currentBoardId); });
+  titleInput.addEventListener("input", e=>{ node.title=e.target.value; queueBoardSave(state.currentBoardId); });
   titleInput.addEventListener("focus", ()=>selectNode(node.id));
 
   /* custom-type fields */
@@ -2625,14 +2609,14 @@ function nodeElement(node){
     rich.addEventListener("input", ()=>{
       node.bodyHtml = rich.innerHTML;
       node.body = richToText(rich.innerHTML);
-      queueBoardSave(currentBoardId);
+      queueBoardSave(state.currentBoardId);
     });
     rich.addEventListener("blur", ()=>{
       const clean = sanitizeHtml(rich.innerHTML);
       if(clean !== rich.innerHTML) rich.innerHTML = clean;
       node.bodyHtml = clean;
       node.body = richToText(clean);
-      queueBoardSave(currentBoardId);
+      queueBoardSave(state.currentBoardId);
     });
     // paste as plain text so outside styling never leaks in
     rich.addEventListener("paste",(e)=>{
@@ -2645,9 +2629,9 @@ function nodeElement(node){
             e.preventDefault();
             e.stopPropagation();
             processImageFile(item.getAsFile(),(dataUrl,w,h)=>{
-              const n = createNode("image", cursorCanvas.x, cursorCanvas.y, {silent:true});
+              const n = createNode("image", state.cursorCanvas.x, state.cursorCanvas.y, {silent:true});
               n.image = dataUrl; n.w = Math.min(320,w); n.h = n.w*(h/w);
-              renderBoard(); queueBoardSave(currentBoardId);
+              renderBoard(); queueBoardSave(state.currentBoardId);
             });
             return;
           }
@@ -2713,7 +2697,7 @@ function nodeElement(node){
         node.bodyHtml = clean;
         node.body = richToText(clean);
       }
-      queueBoardSave(currentBoardId);
+      queueBoardSave(state.currentBoardId);
     });
   });
 
@@ -2730,7 +2714,7 @@ function nodeElement(node){
           const ob = div.querySelector(".tk-fields .tk-open");
           if(ob) ob.classList.toggle("off", !node.link);
         }
-        queueBoardSave(currentBoardId);
+        queueBoardSave(state.currentBoardId);
       });
     });
   if(node.type==="ticket"){
@@ -2779,7 +2763,7 @@ function nodeElement(node){
         measureListOffsets();
         updateConnectionsTouching(node.id);
       }
-      queueBoardSave(currentBoardId);
+      queueBoardSave(state.currentBoardId);
     });
     fld.addEventListener("keydown",(e)=>{
       if(e.target.classList.contains("tr-note")) return;
@@ -2825,7 +2809,7 @@ function nodeElement(node){
   if(wkLabel){
     wkLabel.addEventListener("pointerdown", e=>e.stopPropagation());
     wkLabel.addEventListener("focus", ()=>selectNode(node.id));
-    wkLabel.addEventListener("input", e=>{ node.weekLabel = e.target.value; queueBoardSave(currentBoardId); });
+    wkLabel.addEventListener("input", e=>{ node.weekLabel = e.target.value; queueBoardSave(state.currentBoardId); });
   }
 
   // list rows
@@ -2834,7 +2818,7 @@ function nodeElement(node){
     input.addEventListener("focus", ()=>selectNode(node.id));
     input.addEventListener("input",(e)=>{
       node.items[parseInt(e.target.dataset.idx,10)] = e.target.value;
-      queueBoardSave(currentBoardId);
+      queueBoardSave(state.currentBoardId);
     });
     input.addEventListener("keydown",(e)=>{
       const i = parseInt(e.target.dataset.idx,10);
@@ -2860,7 +2844,7 @@ function nodeElement(node){
     dot.addEventListener("pointerdown",(e)=>{
       e.stopPropagation();
       const idx = parseInt(dot.dataset.idx,10);
-      const offs = itemOffsets[node.id] || [];
+      const offs = state.itemOffsets[node.id] || [];
       const oy = offs[idx]!=null ? offs[idx] : node.h/2;
       startConnectDrag(node.id, idx, node.x+node.w, node.y+oy);
     });
@@ -2870,7 +2854,7 @@ function nodeElement(node){
     sw.addEventListener("pointerdown", e=>e.stopPropagation());
     sw.addEventListener("click",()=>{
       const color = sw.dataset.color;
-      const targets = selection.has(node.id) && selection.size>1 ? [...selection] : [node.id];
+      const targets = state.selection.has(node.id) && state.selection.size>1 ? [...state.selection] : [node.id];
       targets.forEach(id=>{
         const n = findNode(id);
         if(!n) return;
@@ -2881,7 +2865,7 @@ function nodeElement(node){
           nel.querySelectorAll(".swatch").forEach(s=>s.classList.toggle("active", s.dataset.color===color));
         }
       });
-      queueBoardSave(currentBoardId);
+      queueBoardSave(state.currentBoardId);
     });
   });
 
@@ -2900,7 +2884,7 @@ function nodeElement(node){
         if(file) processImageFile(file,(dataUrl)=>{
           node.image = dataUrl;
           div.querySelector(".node-body").innerHTML = '<img src="'+dataUrl+'">';
-          queueBoardSave(currentBoardId);
+          queueBoardSave(state.currentBoardId);
         });
         imgFileInput.value=""; imgFileInput.onchange=null;
       };
@@ -2912,7 +2896,7 @@ function nodeElement(node){
   if(resizeHandle){
     resizeHandle.addEventListener("pointerdown",(e)=>{
       e.stopPropagation();
-      dragState = { mode:"resize", node, el:div, startX:e.clientX, startY:e.clientY, ow:node.w, oh:node.h };
+      state.dragState = { mode:"resize", node, el:div, startX:e.clientX, startY:e.clientY, ow:node.w, oh:node.h };
       div.setPointerCapture(e.pointerId);
     });
   }
@@ -2944,10 +2928,10 @@ function anchorPoint(node, itemIndex, towardX, towardY){
   const cx = node.x+node.w/2;
   let oy;
   if(typeof itemIndex==="string" && itemIndex.indexOf("g:")===0){
-    const go = groupOffsets[node.id] || {};
+    const go = state.groupOffsets[node.id] || {};
     oy = go[itemIndex]!=null ? go[itemIndex] : node.h/2;
   } else {
-    const offs = itemOffsets[node.id] || [];
+    const offs = state.itemOffsets[node.id] || [];
     oy = offs[itemIndex]!=null ? offs[itemIndex] : node.h/2;
   }
   return { x: towardX>cx ? node.x+node.w : node.x, y: node.y+oy };
@@ -2969,12 +2953,12 @@ function createConnection(fromId, fromItem, toId, toItem){
     toItem: (toItem===undefined?null:toItem),
     label:""
   });
-  renderBoard(); queueBoardSave(currentBoardId);
+  renderBoard(); queueBoardSave(state.currentBoardId);
 }
 function deleteConnection(id){
   getData().connections = getData().connections.filter(c=>c.id!==id);
-  selectedConnId = null;
-  renderBoard(); queueBoardSave(currentBoardId);
+  state.selectedConnId = null;
+  renderBoard(); queueBoardSave(state.currentBoardId);
 }
 
 function updateConnectionsTouching(nodeId){
@@ -2997,7 +2981,7 @@ function renderConnections(){
     const line = connLine(conn);
     if(!line) return;
     const vis = document.createElementNS("http://www.w3.org/2000/svg","line");
-    vis.setAttribute("class","visible"+(selectedConnId===conn.id?" selected":""));
+    vis.setAttribute("class","visible"+(state.selectedConnId===conn.id?" selected":""));
     vis.setAttribute("data-conn",conn.id);
     vis.setAttribute("x1",line.x1); vis.setAttribute("y1",line.y1);
     vis.setAttribute("x2",line.x2); vis.setAttribute("y2",line.y2);
@@ -3011,14 +2995,14 @@ function renderConnections(){
     hit.setAttribute("stroke","transparent"); hit.setAttribute("stroke-width","14");
     hit.addEventListener("click",(e)=>{
       e.stopPropagation();
-      selectedConnId = conn.id; selection.clear();
+      state.selectedConnId = conn.id; state.selection.clear();
       canvasInner.querySelectorAll(".node.selected").forEach(n=>n.classList.remove("selected"));
       renderConnections();
     });
     hit.addEventListener("dblclick",(e)=>{
       e.stopPropagation();
       const label = prompt("Label for this connection:", conn.label||"");
-      if(label!==null){ conn.label = label.trim(); renderConnections(); queueBoardSave(currentBoardId); }
+      if(label!==null){ conn.label = label.trim(); renderConnections(); queueBoardSave(state.currentBoardId); }
     });
     connSvg.appendChild(hit);
   });
@@ -3039,7 +3023,7 @@ function renderConnLabelsAndDelete(){
       lbl.textContent = conn.label;
       canvasInner.appendChild(lbl);
     }
-    if(selectedConnId===conn.id){
+    if(state.selectedConnId===conn.id){
       const b = document.createElement("button");
       b.className="conn-del"; b.style.left=mx+"px"; b.style.top=(my-18)+"px"; b.textContent="\u00d7";
       b.addEventListener("click",()=>deleteConnection(conn.id));
@@ -3050,8 +3034,8 @@ function renderConnLabelsAndDelete(){
 
 /* ---------- render ---------- */
 function measureListOffsets(){
-  itemOffsets = {};
-  groupOffsets = {};
+  state.itemOffsets = {};
+  state.groupOffsets = {};
   // auto-height blocks: store the height the browser actually gave them
   getData().nodes.forEach(node=>{
     if(node.type!=="ticket" && !isCustomType(node.type)) return;
@@ -3068,7 +3052,7 @@ function measureListOffsets(){
         nodeEl.querySelectorAll(".list-row, .ticket-row").forEach(row=>{
           offs.push(row.offsetTop + row.offsetHeight/2);
         });
-        itemOffsets[node.id] = offs;
+        state.itemOffsets[node.id] = offs;
       }
     }
     // custom-block group row offsets (string-keyed)
@@ -3080,7 +3064,7 @@ function measureListOffsets(){
           const gk = row.dataset.gk, ri = row.dataset.ri;
           go["g:"+gk+":"+ri] = row.offsetTop + row.offsetHeight/2;
         });
-        groupOffsets[node.id] = go;
+        state.groupOffsets[node.id] = go;
       }
     }
   });
@@ -3139,14 +3123,14 @@ document.addEventListener("keydown",(e)=>{
   }
 
   // spawn-connected while dragging a link
-  if(dragState && dragState.mode==="connect" && plain){
+  if(state.dragState && state.dragState.mode==="connect" && plain){
     const type = HOTKEYS[e.key.toLowerCase()];
     if(type && type!=="image"){
       e.preventDefault();
-      const from = dragState;
+      const from = state.dragState;
       cleanupConnectVisuals();
-      dragState = null;
-      const node = createNode(type, cursorCanvas.x+90, cursorCanvas.y, {silent:true});
+      state.dragState = null;
+      const node = createNode(type, state.cursorCanvas.x+90, state.cursorCanvas.y, {silent:true});
       const label = fromItemLabel(from);
       if(label) node.title = label;
       createConnection(from.fromId, from.fromItem, node.id, null);
@@ -3162,8 +3146,8 @@ document.addEventListener("keydown",(e)=>{
   }
 
   if((e.key==="Delete"||e.key==="Backspace") && !inField){
-    if(selection.size){ e.preventDefault(); deleteSelectedNodes(); }
-    else if(selectedConnId){ e.preventDefault(); deleteConnection(selectedConnId); }
+    if(state.selection.size){ e.preventDefault(); deleteSelectedNodes(); }
+    else if(state.selectedConnId){ e.preventDefault(); deleteConnection(state.selectedConnId); }
   }
   if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==="z" && !inField){
     e.preventDefault();
@@ -3178,22 +3162,22 @@ document.addEventListener("keydown",(e)=>{
     const hid = hiddenNodeIds(); setSelection(getData().nodes.filter(n=>!hid.has(n.id)).map(n=>n.id));
     return;
   }
-  if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==="c" && !inField && selection.size){
-    const nodes = [...selection].map(findNode).filter(Boolean);
+  if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==="c" && !inField && state.selection.size){
+    const nodes = [...state.selection].map(findNode).filter(Boolean);
     if(nodes.length){
       const ids = new Set(nodes.map(n=>n.id));
       // capture connections whose BOTH ends are in the selection, so a copied
       // cluster keeps its internal wiring when pasted (even on another page)
       const conns = getData().connections.filter(c=>ids.has(c.from) && ids.has(c.to));
       const payload = { nodes:JSON.parse(JSON.stringify(nodes)), connections:JSON.parse(JSON.stringify(conns)) };
-      clipboardNode = payload;
+      state.clipboardNode = payload;
       try{ navigator.clipboard.writeText("MINDMAP_NODE::"+JSON.stringify(payload)); }catch(err){}
       showToast(nodes.length>1 ? "Copied "+nodes.length+" boxes" : "Copied");
     }
   }
   if(e.key==="Escape"){
     if(el("pageMenu")){ closePageMenu(); return; }
-    if(dragState && dragState.mode==="connect"){ cleanupConnectVisuals(); dragState=null; }
+    if(state.dragState && state.dragState.mode==="connect"){ cleanupConnectVisuals(); state.dragState=null; }
     deselectAll();
   }
 });
@@ -3210,8 +3194,8 @@ function pasteNodeCopy(src){
   nodesIn.forEach(n=>{
     const copy = JSON.parse(JSON.stringify(n));
     copy.id = uid(); idMap[n.id] = copy.id;
-    copy.x = Math.round(cursorCanvas.x + (n.x-minX));
-    copy.y = Math.round(cursorCanvas.y + (n.y-minY));
+    copy.x = Math.round(state.cursorCanvas.x + (n.x-minX));
+    copy.y = Math.round(state.cursorCanvas.y + (n.y-minY));
     copy.collapsed = false;
     getData().nodes.push(copy);
     newIds.push(copy.id);
@@ -3227,14 +3211,14 @@ function pasteNodeCopy(src){
       });
     }
   });
-  renderBoard(); setSelection(newIds); queueBoardSave(currentBoardId);
+  renderBoard(); setSelection(newIds); queueBoardSave(state.currentBoardId);
   showToast(newIds.length>1 ? "Pasted "+newIds.length+" boxes" : "Pasted");
 }
 function createNoteNodeWithText(text){
-  const node = createNode("note", cursorCanvas.x, cursorCanvas.y, {silent:true});
+  const node = createNode("note", state.cursorCanvas.x, state.cursorCanvas.y, {silent:true});
   node.body = text.slice(0,600);
   node.title = text.slice(0,40);
-  renderBoard(); queueBoardSave(currentBoardId);
+  renderBoard(); queueBoardSave(state.currentBoardId);
 }
 
 document.addEventListener("paste",(e)=>{
@@ -3246,9 +3230,9 @@ document.addEventListener("paste",(e)=>{
       if(item.type.indexOf("image")===0){
         e.preventDefault();
         processImageFile(item.getAsFile(),(dataUrl,w,h)=>{
-          const node = createNode("image", cursorCanvas.x, cursorCanvas.y, {silent:true});
+          const node = createNode("image", state.cursorCanvas.x, state.cursorCanvas.y, {silent:true});
           node.image = dataUrl; node.w = Math.min(320,w); node.h = node.w*(h/w);
-          renderBoard(); queueBoardSave(currentBoardId);
+          renderBoard(); queueBoardSave(state.currentBoardId);
         });
         return;
       }
@@ -3258,10 +3242,10 @@ document.addEventListener("paste",(e)=>{
   if(text && text.indexOf("MINDMAP_NODE::")===0){
     e.preventDefault();
     try{ pasteNodeCopy(JSON.parse(text.slice(14))); }
-    catch(err){ if(clipboardNode) pasteNodeCopy(clipboardNode); }
+    catch(err){ if(state.clipboardNode) pasteNodeCopy(state.clipboardNode); }
     return;
   }
-  if(clipboardNode){ e.preventDefault(); pasteNodeCopy(clipboardNode); return; }
+  if(state.clipboardNode){ e.preventDefault(); pasteNodeCopy(state.clipboardNode); return; }
   if(text && text.trim()){ e.preventDefault(); createNoteNodeWithText(text.trim()); }
 });
 
@@ -3276,7 +3260,7 @@ el("jsonFileInput").addEventListener("change",(e)=>{
 });
 
 window.addEventListener("beforeunload",(e)=>{
-  if(backend==="memory" && getData().nodes.length){
+  if(state.backend==="memory" && getData().nodes.length){
     e.preventDefault();
     e.returnValue = "";
   }
@@ -3288,9 +3272,9 @@ let bdEditingId = null;
 function renderTypeToolbar(){
   const wrap = el("customTypeBtns");
   if(!wrap) return;
-  const ids = Object.keys(customTypes).filter(id=>!customTypes[id].builtin);
+  const ids = Object.keys(state.customTypes).filter(id=>!state.customTypes[id].builtin);
   wrap.innerHTML = ids.map(id=>{
-    const t = customTypes[id];
+    const t = state.customTypes[id];
     return '<button class="add-btn" data-ctype="'+id+'" title="Add a '+escapeAttr(t.name)+' block">' +
       '<span class="swab" style="background:'+(t.accent||"#ddd")+'"></span>'+escapeHtml(t.name)+'</button>';
   }).join('');
@@ -3305,7 +3289,7 @@ function renderTypeToolbar(){
 function openDesigner(){
   el("bdOverlay").classList.add("open");
   renderTypeList();
-  const ids = Object.keys(customTypes);
+  const ids = Object.keys(state.customTypes);
   if(ids.length) editType(ids[0]); else { bdEditingId=null; renderEditor(); }
 }
 function closeDesigner(){
@@ -3316,10 +3300,10 @@ function closeDesigner(){
 
 function renderTypeList(){
   const list = el("bdTypeList");
-  const ids = Object.keys(customTypes);
+  const ids = Object.keys(state.customTypes);
   // built-in editable first, then user-created
-  const builtinIds = ids.filter(id=>customTypes[id].builtin);
-  const customIds = ids.filter(id=>!customTypes[id].builtin);
+  const builtinIds = ids.filter(id=>state.customTypes[id].builtin);
+  const customIds = ids.filter(id=>!state.customTypes[id].builtin);
 
   let html = "";
   if(builtinIds.length){
@@ -3360,7 +3344,7 @@ function renderTypeList(){
   });
 }
 function typeBtnHtml(id){
-  const t = customTypes[id];
+  const t = state.customTypes[id];
   const canDelete = !t.builtin;
   return '<button class="bd-typebtn '+(id===bdEditingId?"active":"")+'" data-id="'+id+'">' +
     '<span class="sw" style="background:'+(t.accent||"#ddd")+'"></span>' +
@@ -3371,7 +3355,7 @@ function typeBtnHtml(id){
 
 function newType(){
   const id = "ct_"+uid().slice(0,8);
-  customTypes[id] = { id, name:"New block", accent:"#bfdbfe", width:240,
+  state.customTypes[id] = { id, name:"New block", accent:"#bfdbfe", width:240,
     fields:[ {key:uid().slice(0,6), label:"Detail", kind:"text", placeholder:"", options:""} ] };
   bdEditingId = id;
   queueTypesSave();
@@ -3379,27 +3363,27 @@ function newType(){
   renderEditor();
 }
 function deleteType(id){
-  if(customTypes[id] && customTypes[id].builtin){ showToast("Built-in blocks can't be deleted"); return; }
+  if(state.customTypes[id] && state.customTypes[id].builtin){ showToast("Built-in blocks can't be deleted"); return; }
   const inUse = getData().nodes.some(n=>n.type===id) ||
-    boards.some(b=>(boardsData[b.id]||{nodes:[]}).nodes.some(n=>n.type===id));
+    state.boards.some(b=>(state.boardsData[b.id]||{nodes:[]}).nodes.some(n=>n.type===id));
   const msg = inUse
     ? "Delete this block type? Blocks already placed with it will keep their data but show as plain. This can't be undone."
     : "Delete this block type? This can't be undone.";
   if(!confirm(msg)) return;
-  delete customTypes[id];
-  if(bdEditingId===id) bdEditingId = Object.keys(customTypes)[0] || null;
+  delete state.customTypes[id];
+  if(bdEditingId===id) bdEditingId = Object.keys(state.customTypes)[0] || null;
   queueTypesSave();
   renderTypeList();
   renderEditor();
 }
 function duplicateType(){
-  const src = customTypes[bdEditingId];
+  const src = state.customTypes[bdEditingId];
   if(!src) return;
   const id = "ct_"+uid().slice(0,8);
-  customTypes[id] = JSON.parse(JSON.stringify(src));
-  customTypes[id].id = id;
-  customTypes[id].name = src.name+" copy";
-  customTypes[id].fields.forEach(f=>{
+  state.customTypes[id] = JSON.parse(JSON.stringify(src));
+  state.customTypes[id].id = id;
+  state.customTypes[id].name = src.name+" copy";
+  state.customTypes[id].fields.forEach(f=>{
     f.key = uid().slice(0,6);
     if(f.kind==="group" && Array.isArray(f.subfields)) f.subfields.forEach(sf=>sf.key = uid().slice(0,6));
   });
@@ -3413,7 +3397,7 @@ function editType(id){ bdEditingId = id; renderTypeList(); renderEditor(); }
 function renderEditor(){
   const ed = el("bdEditor");
   el("bdDuplicate").style.display = bdEditingId ? "" : "none";
-  const t = customTypes[bdEditingId];
+  const t = state.customTypes[bdEditingId];
   if(!t){ ed.innerHTML = '<div class="bd-empty">Select a block type to edit,<br>or create a new one.</div>'; return; }
 
   ed.innerHTML =
@@ -3452,7 +3436,7 @@ function renderEditor(){
 }
 
 function renderFields(){
-  const t = customTypes[bdEditingId];
+  const t = state.customTypes[bdEditingId];
   const wrap = el("bdFields");
   wrap.innerHTML = t.fields.map((f,i)=>{
     const isGroup = f.kind==="group";
@@ -3609,7 +3593,7 @@ function fieldKindLabel(k){
 }
 
 function renderPreview(){
-  const t = customTypes[bdEditingId];
+  const t = state.customTypes[bdEditingId];
   if(!t) return;
   const fake = { id:"__preview", type:bdEditingId, title:t.name, fields:{}, w:t.width||240, color:t.accent };
   // seed one sample row for each group field so the preview shows a row
@@ -3645,14 +3629,14 @@ el("bdOverlay").addEventListener("click",(e)=>{ if(e.target===el("bdOverlay")) c
 (async function init(){
   // determine backend first (restore folder handle if present)
   await restoreFolderHandle();
-  if(backend!=="folder" && typeof window.storage!=="undefined" && window.storage) backend="app";
+  if(state.backend!=="folder" && typeof window.storage!=="undefined" && window.storage) state.backend="app";
   await loadCustomTypes();
   seedBuiltinTypes();
   await loadAll();
   reconstructMissingTypes();
   renderTypeToolbar();
   renderBoardList(); renderBoardHeader(); centerView(); renderBoard();
-  historyReset(currentBoardId);
+  historyReset(state.currentBoardId);
   updateStorageBar();
 })();
 
