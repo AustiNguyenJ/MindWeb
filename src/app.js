@@ -9,6 +9,9 @@ import {
   normalizeUrl, openLinkBackground, currentWeekLabel, isTextEntry, looksRich,
 } from "./util.js";
 import { state } from "./state.js";
+import { el, viewport, canvasInner, connSvg, toastEl, imgFileInput } from "./dom.js";
+import { showToast } from "./toast.js";
+import { copyText, copyBtnHtml } from "./clipboard.js";
 
 
 /* Custom block types the user defines in the Block Designer. Each is a
@@ -135,57 +138,9 @@ function spawnableTypes(){
 let searchScope = { mode:"all", id:null };   // all | notebook | page
 
 let marqueeEl = null;
-let toastTimer = null;
 let linkTipEl = null;
 
-const el = (id)=>document.getElementById(id);
-const viewport = el("viewport");
-const canvasInner = el("canvasInner");
-const connSvg = el("connSvg");
-const toastEl = el("toast");
-const imgFileInput = el("imgFileInput");
 
-
-
-function showToast(msg){
-  toastEl.textContent = msg;
-  toastEl.classList.add("show");
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(()=>toastEl.classList.remove("show"), 1300);
-}
-
-function fallbackCopy(txt, done){
-  const ta = document.createElement("textarea");
-  ta.value = txt;
-  ta.style.position="fixed"; ta.style.top="-2000px"; ta.style.opacity="0";
-  document.body.appendChild(ta);
-  ta.focus(); ta.select();
-  let ok=false;
-  try{ ok = document.execCommand("copy"); }catch(e){ ok=false; }
-  ta.remove();
-  if(ok) done(); else showToast("Copy failed");
-}
-function copyText(txt, btn){
-  txt = (txt===undefined || txt===null) ? "" : String(txt);
-  if(!txt.trim()){ showToast("Nothing to copy"); return; }
-  const done = ()=>{
-    if(btn){
-      const prev = btn.textContent;
-      btn.textContent = "\u2713";
-      btn.classList.add("copied");
-      setTimeout(()=>{ btn.textContent = prev; btn.classList.remove("copied"); }, 900);
-    }
-    showToast("Copied");
-  };
-  if(navigator.clipboard && navigator.clipboard.writeText){
-    navigator.clipboard.writeText(txt).then(done).catch(()=>fallbackCopy(txt, done));
-  } else {
-    fallbackCopy(txt, done);
-  }
-}
-function copyBtnHtml(extraClass, title){
-  return '<button class="copy-btn '+(extraClass||"")+'" title="'+(title||"Copy")+'">'+COPY_ICON+'</button>';
-}
 function ticketSummary(t){
   const parts = [];
   if(t.no) parts.push(t.no);
