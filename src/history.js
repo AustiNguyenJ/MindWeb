@@ -2,8 +2,8 @@ import { state } from "./state.js";
 import { HISTORY_LIMIT } from "./constants.js";
 import { getData } from "./boards.js";
 import { showToast } from "./toast.js";
-import { renderBoard } from "./app.js";
 import { persistBoard } from "./storage.js";
+import { renderBoard } from "./render.js";
 
 /* Undo / redo, snapshot based, one history per page.
    Changes within ~450ms of each other collapse into a single step, so typing

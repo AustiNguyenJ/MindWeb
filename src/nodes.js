@@ -4,8 +4,8 @@ import { uid, currentWeekLabel, plainToHtml } from "./util.js";
 import { canvasInner, imgFileInput } from "./dom.js";
 import { getData, findNode } from "./boards.js";
 import { isCustomType } from "./blockTypes.js";
-import { renderBoard } from "./app.js";
 import { queueBoardSave } from "./storage.js";
+import { renderBoard } from "./render.js";
 
 /* Creating, copying and deleting blocks, and the per-type shape of a new one.
    migrateNode brings a stored block up to the current shape on load, which is

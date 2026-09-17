@@ -3,8 +3,8 @@ import { getData } from "./boards.js";
 import { state } from "./state.js";
 import { blankGroupRow } from "./blockTypes.js";
 import { blankTicket } from "./nodes.js";
-import { renderBoard } from "./app.js";
 import { queueBoardSave } from "./storage.js";
+import { renderBoard } from "./render.js";
 
 /* The repeating rows inside a block: list lines, a week's tickets, and the
    rows of a custom type's repeating-group field.

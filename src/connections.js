@@ -3,8 +3,8 @@ import { canvasInner, connSvg } from "./dom.js";
 import { uid } from "./util.js";
 import { getData, findNode } from "./boards.js";
 import { hiddenNodeIds } from "./collapse.js";
-import { renderBoard } from "./app.js";
 import { queueBoardSave } from "./storage.js";
+import { renderBoard } from "./render.js";
 
 /* The arrows between blocks.
  *

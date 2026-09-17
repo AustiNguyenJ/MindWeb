@@ -1,7 +1,7 @@
 import { state } from "./state.js";
 import { getData, findNode } from "./boards.js";
-import { renderBoard } from "./app.js";
 import { queueBoardSave } from "./storage.js";
+import { renderBoard } from "./render.js";
 
 /* Folding a block's subtree away.
    A block with outgoing arrows can be collapsed; everything reachable from it
