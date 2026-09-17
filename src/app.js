@@ -1,19 +1,20 @@
 import { createClient } from "@supabase/supabase-js";
+import {
+  IDX_KEY, TYPES_KEY, COLORS, DEFAULT_SIZE, HOTKEYS, FIELD_KINDS, SUBFIELD_KINDS,
+  RICH_OK_TAGS, RICH_DROP_TAGS, COPY_ICON, APP_KEY_LIMIT, BUILTIN_KEYS,
+  HISTORY_LIMIT, TYPE_ACCENTS, EDITABLE_BUILTINS, PROTECTED_BUILTINS,
+} from "./constants.js";
+import {
+  uid, escapeHtml, escapeAttr, sanitizeHtml, plainToHtml, richToText, richValue,
+  normalizeUrl, openLinkBackground, currentWeekLabel, isTextEntry, looksRich,
+} from "./util.js";
 
-
-const IDX_KEY = "mindmap:index";
-const COLORS = ["#ffffff","#fde68a","#bfdbfe","#bbf7d0","#fecaca","#e9d5ff"];
-const DEFAULT_SIZE = { header:[220,50], note:[220,140], list:[230,150], question:[220,140],
-                       image:[240,190], ticket:[262,190], week:[330,260] };
-const HOTKEYS = { h:"header", n:"note", l:"list", q:"question", g:"image", t:"ticket", w:"week" };
 
 /* Custom block types the user defines in the Block Designer. Each is a
    schema: a list of fields, plus a default width. Stored per-file so a
    board carries its own block library. Persisted under mindmap:types. */
-const TYPES_KEY = "mindmap:types";
 let customTypes = {};   // typeId -> {id,name,accent,width,fields:[...]}
 
-const FIELD_KINDS = ["text","richtext","link","number","date","select","checkbox","group"];
 function blankField(){
   return { key:uid().slice(0,6), label:"Field", kind:"text", placeholder:"", options:"", subfields:[], layout:"rows" };
 }
@@ -26,32 +27,6 @@ function blankGroupRow(subfields){
   return row;
 }
 function isCustomType(t){ return !!customTypes[t]; }
-
-/* Built-in types that CAN be edited in the designer are expressed as the same
-   schema format and seeded into customTypes on first run. Their ids match the
-   original type names so existing nodes keep working. The repeating-row types
-   (list, week) and the structural ones (header, image) stay hardcoded and are
-   shown in the designer as read-only. */
-const EDITABLE_BUILTINS = {
-  note: { id:"note", name:"Note", accent:"#ffffff", width:220, builtin:true,
-    fields:[ {key:"bodyHtml", label:"Notes", kind:"richtext", placeholder:"Notes...", options:""} ] },
-  question: { id:"question", name:"Question", accent:"#ffffff", width:220, builtin:true,
-    fields:[ {key:"bodyHtml", label:"Question", kind:"richtext", placeholder:"What are we not sure about?", options:""} ] },
-  ticket: { id:"ticket", name:"Ticket", accent:"#ffffff", width:262, builtin:true,
-    fields:[
-      {key:"ticketNo", label:"No.", kind:"text", placeholder:"INC-0000", options:""},
-      {key:"link", label:"Link", kind:"link", placeholder:"Paste URL", options:""},
-      {key:"assigned", label:"Assigned", kind:"text", placeholder:"Assigned to", options:""},
-      {key:"customer", label:"Customer", kind:"text", placeholder:"Customer", options:""},
-      {key:"bodyHtml", label:"Notes", kind:"richtext", placeholder:"Notes...", options:""}
-    ] }
-};
-const PROTECTED_BUILTINS = {
-  list: { name:"List", accent:"#ffffff", note:"Repeating lines, each with its own branch point." },
-  week: { name:"Week", accent:"#ffffff", note:"Repeating ticket rows plus a shared notes area." },
-  header: { name:"Header", accent:"#4757d1", note:"A plain title divider." },
-  image: { name:"Image", accent:"#bfdbfe", note:"A single pasted or uploaded image." }
-};
 
 function seedBuiltinTypes(){
   Object.keys(EDITABLE_BUILTINS).forEach(id=>{
@@ -71,7 +46,6 @@ function seedBuiltinTypes(){
      - a string value                          -> a richtext field
    This makes orphaned blocks display and stay editable again. Reconstructed
    types are marked so we can tell the user and let them relabel in the designer. */
-function looksRich(v){ return typeof v==="string" && /<[a-z][\s\S]*>/i.test(v); }
 
 function reconstructMissingTypes(){
   const missing = {};   // typeId -> {fieldKey -> inferred field}
@@ -181,97 +155,6 @@ const imgFileInput = el("imgFileInput");
 
 let view = { x:0, y:0, scale:1 };
 
-function uid(){ return Math.random().toString(36).slice(2,10)+Date.now().toString(36).slice(-4); }
-const RICH_OK_TAGS = ["B","STRONG","I","EM","U","A","UL","OL","LI","BR","DIV","P","SPAN","CODE"];
-const RICH_DROP_TAGS = ["SCRIPT","STYLE","IFRAME","OBJECT","EMBED","NOSCRIPT","TEMPLATE","SVG","MATH"];
-function sanitizeHtml(html){
-  const tpl = document.createElement("template");
-  tpl.innerHTML = html || "";
-  tpl.content.querySelectorAll("*").forEach(node=>{
-    if(!node.isConnected && !tpl.content.contains(node)) return;
-    if(RICH_DROP_TAGS.indexOf(node.tagName)!==-1){ node.remove(); return; }
-    if(RICH_OK_TAGS.indexOf(node.tagName)===-1){
-      const parent = node.parentNode;
-      while(node.firstChild) parent.insertBefore(node.firstChild, node);
-      node.remove();
-      return;
-    }
-    [...node.attributes].forEach(attr=>{
-      const n = attr.name.toLowerCase();
-      const v = (attr.value||"").trim().toLowerCase();
-      const allowed = (n==="href" || n==="title" || n==="target" || n==="rel");
-      const badProto = v.indexOf("javascript:")===0 || v.indexOf("data:text/html")===0;
-      if(!allowed || badProto) node.removeAttribute(attr.name);
-    });
-    if(node.tagName==="A"){
-      node.setAttribute("target","_blank");
-      node.setAttribute("rel","noopener noreferrer");
-    }
-  });
-  return tpl.innerHTML;
-}
-function plainToHtml(txt){
-  if(!txt) return "";
-  return txt.split("\n").map(l=>escapeHtml(l)).join("<br>");
-}
-function richToText(html){
-  const d = document.createElement("div");
-  d.innerHTML = html || "";
-  return (d.textContent||"").replace(/\s+/g," ").trim();
-}
-/* Coerce a stored field value into safe rich HTML. Values written by the old
-   plain-text 'longtext' field have no markup, so we convert their newlines to
-   <br>; values already containing HTML are just sanitized. */
-function richValue(val){
-  if(!val) return "";
-  const looksHtml = /<[a-z][\s\S]*>/i.test(val);
-  return looksHtml ? sanitizeHtml(val) : plainToHtml(val);
-}
-function normalizeUrl(u){
-  u = (u||"").trim();
-  if(!u) return "";
-  if(/^https?:\/\//i.test(u)) return u;
-  if(/^[\w.-]+\.[a-z]{2,}/i.test(u)) return "https://"+u;
-  return u;
-}
-
-/* Open a link in a BACKGROUND tab, like middle-clicking on the web. Browsers
-   only keep a new tab in the background when the navigation comes from a real
-   anchor activated with a middle-click or ctrl/cmd+click; window.open always
-   steals focus. So we build a throwaway <a target="_blank"> and dispatch a
-   ctrl/cmd+click on it, then remove it. Falls back to window.open if blocked. */
-function openLinkBackground(url){
-  const u = normalizeUrl(url);
-  if(!u) return;
-  try{
-    const a = document.createElement("a");
-    a.href = u;
-    a.target = "_blank";
-    a.rel = "noopener noreferrer";
-    a.style.display = "none";
-    document.body.appendChild(a);
-    const onMac = /Mac|iP(hone|ad|od)/.test(navigator.platform || navigator.userAgent);
-    const ev = new MouseEvent("click", {
-      bubbles:true, cancelable:true, view:window,
-      button:0, ctrlKey:!onMac, metaKey:onMac
-    });
-    a.dispatchEvent(ev);
-    document.body.removeChild(a);
-  }catch(err){
-    window.open(u, "_blank", "noopener");
-  }
-}
-function currentWeekLabel(){
-  const d = new Date();
-  const day = (d.getDay()+6)%7;              // Monday = 0
-  const mon = new Date(d); mon.setDate(d.getDate()-day);
-  const sun = new Date(mon); sun.setDate(mon.getDate()+6);
-  const f = (x)=>x.toLocaleDateString(undefined,{month:"short",day:"numeric"});
-  return "Week of "+f(mon)+" \u2013 "+f(sun);
-}
-
-function escapeHtml(s){ return (s||"").replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-function escapeAttr(s){ return escapeHtml(s); }
 
 function showToast(msg){
   toastEl.textContent = msg;
@@ -309,7 +192,6 @@ function copyText(txt, btn){
     fallbackCopy(txt, done);
   }
 }
-const COPY_ICON = "\u29C9";
 function copyBtnHtml(extraClass, title){
   return '<button class="copy-btn '+(extraClass||"")+'" title="'+(title||"Copy")+'">'+COPY_ICON+'</button>';
 }
@@ -324,19 +206,6 @@ function ticketSummary(t){
   return out;
 }
 
-/* True when focus is anywhere the user is typing, so canvas shortcuts stay
-   out of the way. Checks the property, the attribute, and any editable
-   ancestor, since not every environment exposes all three. */
-function isTextEntry(node){
-  if(!node) return false;
-  const tag = node.tagName;
-  if(tag==="INPUT" || tag==="TEXTAREA" || tag==="SELECT") return true;
-  if(node.isContentEditable === true) return true;
-  const attr = node.getAttribute && node.getAttribute("contenteditable");
-  if(attr === "" || attr === "true") return true;
-  if(node.closest && node.closest('[contenteditable="true"]')) return true;
-  return false;
-}
 
 function getBoard(){ return boards.find(b=>b.id===currentBoardId); }
 function getData(){ return boardsData[currentBoardId] || {nodes:[],connections:[]}; }
@@ -790,10 +659,6 @@ function indexPayload(){
   }, null, 2);
 }
 
-/* window.storage caps each key near 5MB. A board with many images can exceed
-   that; the write then fails and the old value stays, which shows as blank or
-   stale containers. Warn loudly so the user can move to folder storage. */
-const APP_KEY_LIMIT = 5 * 1024 * 1024;
 let sizeWarned = false;
 function checkAppSize(payload){
   const bytes = (typeof Blob!=="undefined") ? new Blob([payload]).size : payload.length;
@@ -1054,7 +919,6 @@ function blankTicket(){ return {no:"", link:"", assigned:"", customer:"", note:"
 /* Built-in editable types keep their data in top-level node props; custom
    fields live in node.fields. These accessors hide that difference so one
    render engine serves both. */
-const BUILTIN_KEYS = { bodyHtml:1, ticketNo:1, link:1, assigned:1, customer:1 };
 function fieldVal(node, key){
   if(BUILTIN_KEYS[key] && node[key]!==undefined) return node[key];
   return node.fields ? node.fields[key] : undefined;
@@ -2426,7 +2290,6 @@ function toggleCollapse(id){
 /* ---------- undo / redo ----------
    Snapshot-based, one history per page. Changes made within ~450ms of each
    other collapse into a single step, so typing a word is one undo, not ten. */
-const HISTORY_LIMIT = 60;
 let undoStacks = {}, redoStacks = {}, lastSnapshots = {};
 let historyTimer = null;
 
@@ -3420,7 +3283,6 @@ window.addEventListener("beforeunload",(e)=>{
 });
 
 /* ---------- block designer ---------- */
-const TYPE_ACCENTS = ["#ffffff","#fde68a","#bfdbfe","#bbf7d0","#fecaca","#e9d5ff","#fed7aa","#c7d2fe"];
 let bdEditingId = null;
 
 function renderTypeToolbar(){
@@ -3739,8 +3601,6 @@ function renderFields(){
   });
 }
 
-// subfields can't themselves be groups (no nesting)
-const SUBFIELD_KINDS = ["text","richtext","link","number","date","checkbox"];
 
 function fieldKindLabel(k){
   return {text:"Short text", longtext:"Rich text", richtext:"Rich text",

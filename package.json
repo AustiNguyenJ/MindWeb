@@ -14,7 +14,7 @@
     "test:both": "npm run test:baseline && npm run test",
     "test:dist": "cross-env MINDMAP_ENTRY=dist/mindmap-tool.html vitest run",
     "test:all": "npm run test:baseline && npm run test && npm run build && npm run test:dist",
-    "check": "node --check src/app.js"
+    "check": "node tools/check.mjs"
   },
   "devDependencies": {
     "cross-env": "^10.1.0",
