@@ -3,7 +3,6 @@ import { el } from "./dom.js";
 import { showToast } from "./toast.js";
 import { IDX_KEY, TYPES_KEY, APP_KEY_LIMIT } from "./constants.js";
 import { ensureNotebookStructure } from "./boards.js";
-import { renderBoardList, renderBoardHeader } from "./app.js";
 import {
   cloudPersistIndex,
   cloudPersistBoard,
@@ -14,6 +13,7 @@ import { recordChange } from "./history.js";
 import { centerView } from "./view.js";
 import { migrateNode } from "./nodes.js";
 import { renderBoard } from "./render.js";
+import { renderBoardList, renderBoardHeader } from "./sidebar.js";
 
 /* Persistence, across four backends chosen at load time:
  *

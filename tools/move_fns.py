@@ -22,6 +22,13 @@ START = re.compile(r"^(export\s+)?(async\s+)?function\s+([A-Za-z0-9_$]+)\s*\(")
 SIMPLE = re.compile(r"^(export\s+)?(let|const)\s+([A-Za-z0-9_$]+)\s*=")
 
 
+def _code(line):
+    """The line with any trailing // comment removed (good enough here: no
+    string literal in this codebase contains a // sequence at top level)."""
+    i = line.find("//")
+    return line if i < 0 else line[:i]
+
+
 def _load():
     return open(APP, encoding="utf-8", newline="").read().split(NL)
 
@@ -68,8 +75,10 @@ def find_blocks(lines, names):
                 if end >= n:
                     raise SystemExit("unterminated function: " + name)
             else:
+                # a trailing // comment means the line may not END with ';',
+                # so strip comments before deciding the statement is over
                 end = i
-                while end < n and not lines[end].rstrip().endswith(";"):
+                while end < n and not _code(lines[end]).rstrip().endswith(";"):
                     end += 1
             if name in found:
                 raise SystemExit("duplicate top-level declaration: " + name)
@@ -116,3 +125,28 @@ def move(names, out_path, header, export=(), app_import=None, anchor=None):
         rest = rest.replace(anchor, anchor + app_import, 1)
     open(APP, "w", encoding="utf-8", newline="").write(rest)
     return len(names)
+
+
+def cut_lines(a, b, expect_first=None, expect_last=None):
+    """Cut an inclusive 1-indexed line range out of app.js and return its text.
+
+    Used for the top-level listener blocks, which are statements rather than
+    declarations and so have to be relocated by position. Each range asserts
+    on its first and last line before anything is written.
+    """
+    lines = _load()
+    if expect_first is not None:
+        assert lines[a - 1].startswith(expect_first), (a, lines[a - 1])
+    if expect_last is not None:
+        assert lines[b - 1].startswith(expect_last), (b, lines[b - 1])
+    out = NL.join(lines[a - 1:b])
+    rest = lines[:a - 1] + lines[b:]
+    open(APP, "w", encoding="utf-8", newline="").write(NL.join(rest))
+    return out
+
+
+def as_init(name, body, doc=""):
+    """Wrap relocated top-level statements in an exported init function."""
+    indented = NL.join(("  " + l) if l.strip() else l for l in body.split(NL))
+    head = ("/* " + doc + " */" + NL) if doc else ""
+    return head + "export function " + name + "(){" + NL + indented + NL + "}" + NL

@@ -2,13 +2,14 @@ import { createClient } from "@supabase/supabase-js";
 import { state } from "./state.js";
 import { el } from "./dom.js";
 import { showToast } from "./toast.js";
-import { renderTypeToolbar, renderBoardList, renderBoardHeader } from "./app.js";
+import { renderTypeToolbar } from "./app.js";
 import { ensureNotebookStructure } from "./boards.js";
 import { updateStorageBar } from "./storage.js";
 import { historyReset } from "./history.js";
 import { centerView } from "./view.js";
 import { migrateNode } from "./nodes.js";
 import { renderBoard } from "./render.js";
+import { renderBoardList, renderBoardHeader } from "./sidebar.js";
 
 /* Supabase: client construction, the email magic-link sign-in flow, the
    sidebar's cloud status bar, and the cloud storage backend.
