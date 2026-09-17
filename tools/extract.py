@@ -8,7 +8,7 @@ impossible.
 import sys
 import os
 
-APP = os.path.join(os.path.dirname(__file__), "..", "src", "app.js")
+APP = os.path.join(os.path.dirname(__file__), "..", "src", "main.js")
 APP = os.path.normpath(APP)
 
 

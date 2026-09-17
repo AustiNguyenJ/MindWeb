@@ -14,10 +14,6 @@ import { renderTypeToolbar } from "./designer.js";
 /* Supabase: client construction, the email magic-link sign-in flow, the
    sidebar's cloud status bar, and the cloud storage backend.
 
-   This module and app.js import from each other. That is fine here because
-   every cross-module reference is a call to a hoisted function declaration,
-   made at runtime rather than while the modules are still evaluating.
-
    The client is constructed and the auth listeners registered while this
    module evaluates, exactly as they were in the single-file version, so the
    sign-in flow keeps its original ordering. */

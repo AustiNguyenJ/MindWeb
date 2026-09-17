@@ -44,6 +44,14 @@ export function seedBuiltinTypes(){
   });
 }
 
+/* Recover custom block types whose definition file was lost but whose blocks
+   still carry data. We scan every board for nodes of a ct_* type that isn't
+   in customTypes, and rebuild a working schema by inspecting the field data:
+     - a value that's an array of row objects  -> a "group" field, with
+       subfields inferred from the row keys (HTML-looking values = richtext)
+     - a string value                          -> a richtext field
+   This makes orphaned blocks display and stay editable again. Reconstructed
+   types are marked so we can tell the user and let them relabel in the designer. */
 export function reconstructMissingTypes(){
   const missing = {};   // typeId -> {fieldKey -> inferred field}
   Object.keys(state.boardsData).forEach(bid=>{

@@ -38,7 +38,7 @@ console.log(`${files.length - bad}/${files.length} files parse cleanly`);
 try {
   const { build } = await import("esbuild");
   await build({
-    entryPoints: [join(ROOT, "src/app.js")],
+    entryPoints: [join(ROOT, "src/main.js")],
     bundle: true,
     format: "iife",
     target: "es2020",

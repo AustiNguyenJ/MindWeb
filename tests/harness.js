@@ -63,7 +63,7 @@ let bundlePromise = null;
 function appBundle() {
   if (!bundlePromise) {
     bundlePromise = build({
-      entryPoints: [resolve(ROOT, "src/app.js")],
+      entryPoints: [resolve(ROOT, "src/main.js")],
       bundle: true,
       format: "iife",
       target: "es2020",
@@ -89,7 +89,7 @@ function appBundle() {
             return "  " + (l ? `${l.file}:${l.line}:${l.column} ` : "") + e.text;
           })
           .join("\n");
-        throw new Error("Failed to bundle src/app.js:\n" + (detail || err.message));
+        throw new Error("Failed to bundle src/main.js:\n" + (detail || err.message));
       }
     );
   }
@@ -217,13 +217,13 @@ export async function createApp(entry = DEFAULT_ENTRY, opts = {}) {
   // Swap the module script for a classic one jsdom can run; the loader then
   // answers that request with the esbuild bundle rather than the file on disk.
   const overrides = {};
-  const moduleTag = /<script[^>]*src="\/?src\/app\.js"[^>]*><\/script>/;
+  const moduleTag = /<script[^>]*src="\/?src\/main\.js"[^>]*><\/script>/;
   if (moduleTag.test(html)) {
-    html = html.replace(moduleTag, '<script src="src/app.js"></script>');
+    html = html.replace(moduleTag, '<script src="src/main.js"></script>');
     // build up front so a broken module graph throws here, with the compiler's
     // own message, instead of silently producing a page that never boots
     await appBundle();
-    overrides["src/app.js"] = appBundle;
+    overrides["src/main.js"] = appBundle;
   }
 
   // The built single-file artifact carries an inline <script type="module"> in

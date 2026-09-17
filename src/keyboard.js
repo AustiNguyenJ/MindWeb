@@ -1,4 +1,4 @@
-import { el, canvasInner } from "./dom.js";
+import { el } from "./dom.js";
 import { state } from "./state.js";
 import { HOTKEYS } from "./constants.js";
 import { isTextEntry } from "./util.js";
@@ -7,7 +7,13 @@ import { getData, findNode } from "./boards.js";
 import { uid } from "./util.js";
 import { setSelection, deselectAll } from "./selection.js";
 import { hiddenNodeIds } from "./collapse.js";
-import { createNode, spawnAtCursor, deleteSelectedNodes, processImageFile, focusNodeTitle } from "./nodes.js";
+import {
+  createNode,
+  spawnAtCursor,
+  deleteSelectedNodes,
+  processImageFile,
+  focusNodeTitle,
+} from "./nodes.js";
 import { createConnection, deleteConnection } from "./connections.js";
 import { renderBoard } from "./render.js";
 import { undo, redo } from "./history.js";

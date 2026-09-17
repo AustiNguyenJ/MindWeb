@@ -7,6 +7,9 @@ export const COLORS = ["#ffffff","#fde68a","#bfdbfe","#bbf7d0","#fecaca","#e9d5f
 export const DEFAULT_SIZE = { header:[220,50], note:[220,140], list:[230,150], question:[220,140],
                        image:[240,190], ticket:[262,190], week:[330,260] };
 export const HOTKEYS = { h:"header", n:"note", l:"list", q:"question", g:"image", t:"ticket", w:"week" };
+/* Custom block types the user defines in the Block Designer. Each is a
+   schema: a list of fields, plus a default width. Stored per-file so a
+   board carries its own block library. Persisted under mindmap:types. */
 export const TYPES_KEY = "mindmap:types";
 export const FIELD_KINDS = ["text","richtext","link","number","date","select","checkbox","group"];
 export const RICH_OK_TAGS = ["B","STRONG","I","EM","U","A","UL","OL","LI","BR","DIV","P","SPAN","CODE"];
