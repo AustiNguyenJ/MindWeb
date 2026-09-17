@@ -1,0 +1,3 @@
+# Preserve bytes exactly: this repo is a refactor of a single HTML file and
+# several steps are verified by byte-for-byte comparison against the baseline.
+* -text

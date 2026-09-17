@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls -la \"C:/Users/Kefo/Desktop/MindWeb/app\" 2>&1 | head -50; echo \"---parent---\"; ls -la \"C:/Users/Kefo/Desktop/MindWeb\" 2>&1 | head -50)",
+      "Read(//c/Users/Kefo/Desktop/MindWeb/**)"
+    ]
+  }
+}
