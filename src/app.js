@@ -82,6 +82,55 @@ import {
 } from "./blockTypes.js";
 import { historyReset, undo, redo } from "./history.js";
 import { exportAll, importAll } from "./exportImport.js";
+import {
+  applyTransform,
+  centerView,
+  zoomAt,
+  clientToCanvas,
+  viewportCenterCanvasCoords,
+} from "./view.js";
+import {
+  outgoingCount,
+  descendantsOf,
+  hiddenNodeIds,
+  toggleCollapse,
+} from "./collapse.js";
+import {
+  deselectAll,
+  applySelectionClasses,
+  selectNode,
+  setSelection,
+} from "./selection.js";
+import {
+  createConnection,
+  deleteConnection,
+  updateConnectionsTouching,
+  renderConnections,
+  renderConnLabelsAndDelete,
+} from "./connections.js";
+import {
+  blankTicket,
+  ticketSummary,
+  migrateNode,
+  createNode,
+  focusNodeTitle,
+  spawnAtCursor,
+  processImageFile,
+  deleteNode,
+  deleteSelectedNodes,
+  duplicateNode,
+} from "./nodes.js";
+import {
+  itemHasConnection,
+  groupKey,
+  groupRowHasConnection,
+  addGroupRow,
+  removeGroupRow,
+  addListItem,
+  addTicketRow,
+  removeTicketRow,
+  removeListItem,
+} from "./rows.js";
 
 
 /* Custom block types the user defines in the Block Designer. Each is a
@@ -105,18 +154,6 @@ let marqueeEl = null;
 let linkTipEl = null;
 
 
-function ticketSummary(t){
-  const parts = [];
-  if(t.no) parts.push(t.no);
-  if(t.assigned) parts.push("Assigned: "+t.assigned);
-  if(t.customer) parts.push("Customer: "+t.customer);
-  if(t.link) parts.push(t.link);
-  let out = parts.join("  |  ");
-  if(t.note) out += (out?"\n":"")+t.note;
-  return out;
-}
-
-
 /* ---------- storage backends ------------------------------------------
    Priority order:
      1. "folder" - a real folder on disk (File System Access API).
@@ -133,8 +170,6 @@ function ticketSummary(t){
 /* Track boards whose file existed but failed to parse, so we don't overwrite
    the (possibly recoverable) file with an empty one on the next autosave. */
 
-
-function blankTicket(){ return {no:"", link:"", assigned:"", customer:"", note:""}; }
 
 /* ---------- custom block types ---------- */
 
@@ -384,38 +419,6 @@ function wireCustomFields(div, node){
       startConnectDrag(node.id, groupKey(gk, ri), node.x+node.w, node.y+oy);
     });
   });
-}
-
-export function migrateNode(n){
-  if(n.type==="list" && !Array.isArray(n.items)){
-    const lines = (n.body||"").split("\n").map(s=>s.trim()).filter(Boolean);
-    n.items = lines.length ? lines : [""];
-  }
-  if(n.type==="list" && !n.items.length) n.items=[""];
-  if(typeof n.collapsed !== "boolean") n.collapsed = false;
-  if(n.bodyHtml === undefined) n.bodyHtml = plainToHtml(n.body||"");
-  if(isCustomType(n.type) && !n.fields) n.fields = {};
-  if(isCustomType(n.type)){
-    const def = state.customTypes[n.type];
-    if(def) def.fields.forEach(f=>{
-      if(f.kind==="group" && !Array.isArray(n.fields[f.key])) n.fields[f.key] = [];
-    });
-  }
-  if(n.type==="week" && !Array.isArray(n.tickets)) n.tickets = [blankTicket()];
-  if(n.type==="week" && !n.tickets.length) n.tickets = [blankTicket()];
-  if(n.type==="week") n.tickets.forEach(t=>{
-    if(t.assigned===undefined) t.assigned = "";
-    if(t.customer===undefined) t.customer = "";
-    if(t.note===undefined) t.note = "";
-  });
-  if(n.type==="week" && !n.weekLabel) n.weekLabel = currentWeekLabel();
-  if(n.type==="ticket"){
-    if(n.ticketNo===undefined) n.ticketNo = "";
-    if(n.link===undefined) n.link = "";
-    if(n.assigned===undefined) n.assigned = "";
-    if(n.customer===undefined) n.customer = "";
-  }
-  return n;
 }
 
 
@@ -992,24 +995,6 @@ function goToNode(boardId, nodeId){
   }
 }
 
-/* ---------- view ---------- */
-function applyTransform(){
-  canvasInner.style.transform = "translate("+state.view.x+"px,"+state.view.y+"px) scale("+state.view.scale+")";
-  el("zoomPct").textContent = Math.round(state.view.scale*100)+"%";
-}
-export function centerView(){
-  const rect = viewport.getBoundingClientRect();
-  state.view.scale = 1; state.view.x = rect.width/2-2100; state.view.y = rect.height/2-1500;
-  applyTransform();
-}
-function zoomAt(clientX, clientY, factor){
-  const rect = viewport.getBoundingClientRect();
-  const mx=clientX-rect.left, my=clientY-rect.top;
-  const cx=(mx-state.view.x)/state.view.scale, cy=(my-state.view.y)/state.view.scale;
-  const ns = Math.min(2.2, Math.max(0.35, state.view.scale*factor));
-  state.view.x = mx-cx*ns; state.view.y = my-cy*ns; state.view.scale = ns;
-  applyTransform();
-}
 el("zoomIn").addEventListener("click",()=>{const r=viewport.getBoundingClientRect();zoomAt(r.left+r.width/2,r.top+r.height/2,1.2);});
 el("zoomOut").addEventListener("click",()=>{const r=viewport.getBoundingClientRect();zoomAt(r.left+r.width/2,r.top+r.height/2,0.83);});
 el("zoomReset").addEventListener("click", centerView);
@@ -1019,10 +1004,6 @@ viewport.addEventListener("wheel",(e)=>{
   zoomAt(e.clientX, e.clientY, e.deltaY<0 ? 1.09 : 0.915);
 },{passive:false});
 
-function clientToCanvas(clientX, clientY){
-  const rect = viewport.getBoundingClientRect();
-  return { x:(clientX-rect.left-state.view.x)/state.view.scale, y:(clientY-rect.top-state.view.y)/state.view.scale };
-}
 viewport.addEventListener("pointermove",(e)=>{ state.cursorCanvas = clientToCanvas(e.clientX,e.clientY); });
 
 /* right button anywhere on the canvas = rubber-band select.
@@ -1309,59 +1290,6 @@ function startConnectDrag(fromId, fromItem, startX, startY){
   document.body.appendChild(linkTipEl);
 }
 
-/* ---------- nodes ---------- */
-function createNode(type, cx, cy, opts){
-  opts = opts || {};
-  const def = state.customTypes[type];
-  const size = def ? [def.width||240, 120] : (DEFAULT_SIZE[type] || [220,140]);
-  const node = {
-    id: uid(), type,
-    x: Math.round(cx-size[0]/2), y: Math.round(cy-size[1]/2),
-    w: size[0], h: size[1],
-    title: type==="header" ? "New topic" : (def ? "" : ""),
-    body: "",
-    items: type==="list" ? [""] : undefined,
-    bodyHtml: "",
-    fields: def ? {} : undefined,
-    ticketNo: type==="ticket" ? "" : undefined,
-    link: type==="ticket" ? "" : undefined,
-    assigned: type==="ticket" ? "" : undefined,
-    customer: type==="ticket" ? "" : undefined,
-    weekLabel: type==="week" ? currentWeekLabel() : undefined,
-    tickets: type==="week" ? [blankTicket()] : undefined,
-    color: def ? (def.accent||"#ffffff") : "#ffffff",
-    collapsed: false,
-    image: null
-  };
-  getData().nodes.push(node);
-  renderBoard();
-  queueBoardSave(state.currentBoardId);
-  if(!opts.silent) focusNodeTitle(node.id);
-  return node;
-}
-
-function focusNodeTitle(id){
-  const t = canvasInner.querySelector('.node[data-id="'+id+'"] .node-title');
-  if(t){ t.focus(); if(t.select) t.select(); }
-}
-
-function spawnAtCursor(type){
-  if(type==="image"){
-    const c = {x:state.cursorCanvas.x, y:state.cursorCanvas.y};
-    imgFileInput.onchange = (e)=>{
-      const file = e.target.files[0];
-      if(file) processImageFile(file,(dataUrl,w,h)=>{
-        const node = createNode("image", c.x, c.y, {silent:true});
-        node.image = dataUrl; node.w = Math.min(320,w); node.h = node.w*(h/w);
-        renderBoard(); queueBoardSave(state.currentBoardId);
-      });
-      imgFileInput.value=""; imgFileInput.onchange=null;
-    };
-    imgFileInput.click();
-    return null;
-  }
-  return createNode(type, state.cursorCanvas.x, state.cursorCanvas.y);
-}
 
 document.querySelectorAll(".add-btn[data-type]").forEach(btn=>{
   btn.addEventListener("click", ()=>{
@@ -1370,10 +1298,6 @@ document.querySelectorAll(".add-btn[data-type]").forEach(btn=>{
   });
 });
 
-function viewportCenterCanvasCoords(){
-  const rect = viewport.getBoundingClientRect();
-  return { x:(rect.width/2-state.view.x)/state.view.scale, y:(rect.height/2-state.view.y)/state.view.scale };
-}
 
 el("addImageBtn").addEventListener("click", ()=>{
   imgFileInput.onchange = (e)=>{
@@ -1389,212 +1313,6 @@ el("addImageBtn").addEventListener("click", ()=>{
   imgFileInput.click();
 });
 
-function processImageFile(file, cb){
-  const reader = new FileReader();
-  reader.onload = (e)=>{
-    const img = new Image();
-    img.onload = ()=>{
-      const maxDim=900; let w=img.width, h=img.height;
-      if(w>maxDim||h>maxDim){ const r=Math.min(maxDim/w,maxDim/h); w=Math.round(w*r); h=Math.round(h*r); }
-      const c=document.createElement("canvas"); c.width=w; c.height=h;
-      c.getContext("2d").drawImage(img,0,0,w,h);
-      cb(c.toDataURL("image/jpeg",0.85), w, h);
-    };
-    img.src = e.target.result;
-  };
-  reader.readAsDataURL(file);
-}
-
-function deleteNode(id){
-  const data = getData();
-  data.nodes = data.nodes.filter(n=>n.id!==id);
-  data.connections = data.connections.filter(c=>c.from!==id && c.to!==id);
-  state.selection.delete(id);
-  renderBoard(); queueBoardSave(state.currentBoardId);
-}
-function deleteSelectedNodes(){
-  const ids = new Set(state.selection);
-  if(!ids.size) return;
-  const data = getData();
-  data.nodes = data.nodes.filter(n=>!ids.has(n.id));
-  data.connections = data.connections.filter(c=>!ids.has(c.from) && !ids.has(c.to));
-  state.selection.clear();
-  renderBoard(); queueBoardSave(state.currentBoardId);
-}
-function duplicateNode(id){
-  const n = findNode(id);
-  if(!n) return;
-  const copy = JSON.parse(JSON.stringify(n));
-  copy.id = uid(); copy.x = n.x+24; copy.y = n.y+24;
-  getData().nodes.push(copy);
-  renderBoard(); queueBoardSave(state.currentBoardId);
-}
-/* ---------- collapse ----------
-   A box with outgoing connections can be collapsed from its head. Everything
-   downstream of it (following arrows outward, recursively) is hidden, along
-   with any lines touching those boxes. The collapsed box shows a count. */
-function outgoingCount(id){ return getData().connections.filter(c=>c.from===id).length; }
-
-function descendantsOf(id){
-  const data = getData();
-  const out = new Set();
-  const stack = data.connections.filter(c=>c.from===id).map(c=>c.to);
-  while(stack.length){
-    const cur = stack.pop();
-    if(cur===id || out.has(cur)) continue;
-    out.add(cur);
-    data.connections.filter(c=>c.from===cur).forEach(c=>{ if(!out.has(c.to)) stack.push(c.to); });
-  }
-  return out;
-}
-
-function hiddenNodeIds(){
-  const data = getData();
-  const hidden = new Set();
-  data.nodes.filter(n=>n.collapsed && outgoingCount(n.id)).forEach(root=>{
-    descendantsOf(root.id).forEach(id=>hidden.add(id));
-  });
-  return hidden;
-}
-
-function toggleCollapse(id){
-  const n = findNode(id);
-  if(!n) return;
-  n.collapsed = !n.collapsed;
-  if(n.collapsed){
-    descendantsOf(id).forEach(d=>state.selection.delete(d));
-  }
-  renderBoard();
-  queueBoardSave(state.currentBoardId);
-}
-
-
-function deselectAll(){
-  state.selection.clear(); state.selectedConnId=null;
-  canvasInner.querySelectorAll(".node.selected").forEach(n=>n.classList.remove("selected"));
-  renderConnections();
-}
-function applySelectionClasses(){
-  canvasInner.querySelectorAll(".node").forEach(n=>n.classList.toggle("selected", state.selection.has(n.dataset.id)));
-}
-function selectNode(id, additive){
-  if(additive){
-    if(state.selection.has(id)) state.selection.delete(id); else state.selection.add(id);
-  } else {
-    if(!state.selection.has(id)){ state.selection.clear(); state.selection.add(id); }
-  }
-  state.selectedConnId = null;
-  applySelectionClasses();
-  renderConnLabelsAndDelete();
-}
-function setSelection(ids){
-  state.selection = new Set(ids);
-  state.selectedConnId = null;
-  applySelectionClasses();
-  renderConnLabelsAndDelete();
-}
-function onlySelected(){
-  return state.selection.size===1 ? findNode(state.selection.values().next().value) : null;
-}
-
-/* ---------- list item helpers ---------- */
-function itemHasConnection(nodeId, idx){
-  return getData().connections.some(c=>(c.from===nodeId && c.fromItem===idx) || (c.to===nodeId && c.toItem===idx));
-}
-
-/* Group rows use string item-keys "g:<fieldKey>:<rowIdx>" so they never clash
-   with the numeric indices used by list/week rows. */
-function groupKey(fieldKey, rowIdx){ return "g:"+fieldKey+":"+rowIdx; }
-function groupRowHasConnection(nodeId, fieldKey, rowIdx){
-  const k = groupKey(fieldKey, rowIdx);
-  return getData().connections.some(c=>(c.from===nodeId && c.fromItem===k) || (c.to===nodeId && c.toItem===k));
-}
-function shiftGroupConnections(node, fieldKey, at, delta){
-  // when a row is inserted/removed at index `at`, shift row-keys at or after it
-  const prefix = "g:"+fieldKey+":";
-  getData().connections.forEach(c=>{
-    ["fromItem","toItem"].forEach(side=>{
-      const v = c[side];
-      if(typeof v==="string" && v.indexOf(prefix)===0){
-        const ri = parseInt(v.slice(prefix.length),10);
-        if(delta>0 && ri>=at) c[side] = groupKey(fieldKey, ri+1);
-        else if(delta<0 && ri>at) c[side] = groupKey(fieldKey, ri-1);
-      }
-    });
-  });
-}
-function addGroupRow(node, fieldKey, afterIdx){
-  const def = state.customTypes[node.type];
-  const f = def ? def.fields.find(x=>x.key===fieldKey) : null;
-  if(!f) return;
-  if(!Array.isArray(node.fields[fieldKey])) node.fields[fieldKey] = [];
-  const rows = node.fields[fieldKey];
-  const at = (afterIdx===undefined||afterIdx===null) ? rows.length : afterIdx+1;
-  shiftGroupConnections(node, fieldKey, at, +1);
-  rows.splice(at, 0, blankGroupRow(f.subfields));
-  renderBoard(); queueBoardSave(state.currentBoardId);
-  const cell = canvasInner.querySelector('.node[data-id="'+node.id+'"] .group-row[data-gk="'+fieldKey+'"][data-ri="'+at+'"] .gsub');
-  if(cell) cell.focus();
-}
-function removeGroupRow(node, fieldKey, idx){
-  const rows = node.fields[fieldKey];
-  if(!Array.isArray(rows)) return;
-  // drop connections attached to this row, then shift the rest down
-  const k = groupKey(fieldKey, idx);
-  const data = getData();
-  data.connections = data.connections.filter(c=>!(
-    (c.from===node.id && c.fromItem===k) || (c.to===node.id && c.toItem===k)));
-  shiftGroupConnections(node, fieldKey, idx, -1);
-  rows.splice(idx,1);
-  renderBoard(); queueBoardSave(state.currentBoardId);
-}
-function addListItem(node, afterIdx){
-  const at = (afterIdx===undefined || afterIdx===null) ? node.items.length : afterIdx+1;
-  node.items.splice(at, 0, "");
-  getData().connections.forEach(c=>{
-    if(c.from===node.id && c.fromItem!==null && c.fromItem>=at) c.fromItem++;
-    if(c.to===node.id && c.toItem!==null && c.toItem>=at) c.toItem++;
-  });
-  renderBoard(); queueBoardSave(state.currentBoardId);
-  const input = canvasInner.querySelector('.node[data-id="'+node.id+'"] .list-row[data-idx="'+at+'"] .list-input');
-  if(input) input.focus();
-}
-function addTicketRow(node, afterIdx){
-  const at = (afterIdx===undefined||afterIdx===null) ? node.tickets.length : afterIdx+1;
-  node.tickets.splice(at, 0, blankTicket());
-  getData().connections.forEach(c=>{
-    if(c.from===node.id && c.fromItem!==null && c.fromItem>=at) c.fromItem++;
-    if(c.to===node.id && c.toItem!==null && c.toItem>=at) c.toItem++;
-  });
-  renderBoard(); queueBoardSave(state.currentBoardId);
-  const f = canvasInner.querySelector('.node[data-id="'+node.id+'"] .ticket-row[data-idx="'+at+'"] .tr-no');
-  if(f) f.focus();
-}
-function removeTicketRow(node, idx){
-  if(node.tickets.length===1){ node.tickets[0]=blankTicket(); renderBoard(); queueBoardSave(state.currentBoardId); return; }
-  node.tickets.splice(idx,1);
-  const data = getData();
-  data.connections = data.connections.filter(c=>
-    !((c.from===node.id && c.fromItem===idx) || (c.to===node.id && c.toItem===idx)));
-  data.connections.forEach(c=>{
-    if(c.from===node.id && c.fromItem!==null && c.fromItem>idx) c.fromItem--;
-    if(c.to===node.id && c.toItem!==null && c.toItem>idx) c.toItem--;
-  });
-  renderBoard(); queueBoardSave(state.currentBoardId);
-}
-
-function removeListItem(node, idx){
-  if(node.items.length===1){ node.items[0]=""; renderBoard(); queueBoardSave(state.currentBoardId); return; }
-  node.items.splice(idx,1);
-  const data = getData();
-  data.connections = data.connections.filter(c=>
-    !((c.from===node.id && c.fromItem===idx) || (c.to===node.id && c.toItem===idx)));
-  data.connections.forEach(c=>{
-    if(c.from===node.id && c.fromItem!==null && c.fromItem>idx) c.fromItem--;
-    if(c.to===node.id && c.toItem!==null && c.toItem>idx) c.toItem--;
-  });
-  renderBoard(); queueBoardSave(state.currentBoardId);
-}
 
 /* ---------- node element ---------- */
 function nodeElement(node){
@@ -2041,127 +1759,6 @@ function nodeElement(node){
   return div;
 }
 
-/* ---------- connections ---------- */
-function edgePoint(node, dirX, dirY){
-  const cx=node.x+node.w/2, cy=node.y+node.h/2, hw=node.w/2, hh=node.h/2;
-  if(dirX===0 && dirY===0) return {x:cx,y:cy};
-  const sx = dirX!==0 ? hw/Math.abs(dirX) : Infinity;
-  const sy = dirY!==0 ? hh/Math.abs(dirY) : Infinity;
-  const s = Math.min(sx,sy);
-  return { x:cx+dirX*s, y:cy+dirY*s };
-}
-
-function anchorPoint(node, itemIndex, towardX, towardY){
-  if(itemIndex===null || itemIndex===undefined){
-    const cx=node.x+node.w/2, cy=node.y+node.h/2;
-    return edgePoint(node, towardX-cx, towardY-cy);
-  }
-  const cx = node.x+node.w/2;
-  let oy;
-  if(typeof itemIndex==="string" && itemIndex.indexOf("g:")===0){
-    const go = state.groupOffsets[node.id] || {};
-    oy = go[itemIndex]!=null ? go[itemIndex] : node.h/2;
-  } else {
-    const offs = state.itemOffsets[node.id] || [];
-    oy = offs[itemIndex]!=null ? offs[itemIndex] : node.h/2;
-  }
-  return { x: towardX>cx ? node.x+node.w : node.x, y: node.y+oy };
-}
-
-function connLine(conn){
-  const a = findNode(conn.from), b = findNode(conn.to);
-  if(!a||!b) return null;
-  const bcx=b.x+b.w/2, bcy=b.y+b.h/2;
-  const p1 = anchorPoint(a, conn.fromItem, bcx, bcy);
-  const p2 = anchorPoint(b, conn.toItem, p1.x, p1.y);
-  return { x1:p1.x, y1:p1.y, x2:p2.x, y2:p2.y };
-}
-
-function createConnection(fromId, fromItem, toId, toItem){
-  getData().connections.push({
-    id:uid(), from:fromId, to:toId,
-    fromItem: (fromItem===undefined?null:fromItem),
-    toItem: (toItem===undefined?null:toItem),
-    label:""
-  });
-  renderBoard(); queueBoardSave(state.currentBoardId);
-}
-function deleteConnection(id){
-  getData().connections = getData().connections.filter(c=>c.id!==id);
-  state.selectedConnId = null;
-  renderBoard(); queueBoardSave(state.currentBoardId);
-}
-
-function updateConnectionsTouching(nodeId){
-  getData().connections.forEach(conn=>{
-    if(conn.from!==nodeId && conn.to!==nodeId) return;
-    const line = connLine(conn);
-    if(!line) return;
-    const vis = connSvg.querySelector('.visible[data-conn="'+conn.id+'"]');
-    const hit = connSvg.querySelector('.hit[data-conn="'+conn.id+'"]');
-    [vis,hit].forEach(l=>{ if(l){ l.setAttribute("x1",line.x1); l.setAttribute("y1",line.y1); l.setAttribute("x2",line.x2); l.setAttribute("y2",line.y2); } });
-  });
-  renderConnLabelsAndDelete();
-}
-
-function renderConnections(){
-  connSvg.querySelectorAll("line:not(#tempConnLine)").forEach(n=>n.remove());
-  const hidden = hiddenNodeIds();
-  getData().connections.forEach(conn=>{
-    if(hidden.has(conn.from) || hidden.has(conn.to)) return;
-    const line = connLine(conn);
-    if(!line) return;
-    const vis = document.createElementNS("http://www.w3.org/2000/svg","line");
-    vis.setAttribute("class","visible"+(state.selectedConnId===conn.id?" selected":""));
-    vis.setAttribute("data-conn",conn.id);
-    vis.setAttribute("x1",line.x1); vis.setAttribute("y1",line.y1);
-    vis.setAttribute("x2",line.x2); vis.setAttribute("y2",line.y2);
-    vis.setAttribute("stroke","#9aa1ab"); vis.setAttribute("stroke-width","2"); vis.setAttribute("marker-end","url(#arrowHead)");
-    connSvg.appendChild(vis);
-
-    const hit = document.createElementNS("http://www.w3.org/2000/svg","line");
-    hit.setAttribute("class","hit"); hit.setAttribute("data-conn",conn.id);
-    hit.setAttribute("x1",line.x1); hit.setAttribute("y1",line.y1);
-    hit.setAttribute("x2",line.x2); hit.setAttribute("y2",line.y2);
-    hit.setAttribute("stroke","transparent"); hit.setAttribute("stroke-width","14");
-    hit.addEventListener("click",(e)=>{
-      e.stopPropagation();
-      state.selectedConnId = conn.id; state.selection.clear();
-      canvasInner.querySelectorAll(".node.selected").forEach(n=>n.classList.remove("selected"));
-      renderConnections();
-    });
-    hit.addEventListener("dblclick",(e)=>{
-      e.stopPropagation();
-      const label = prompt("Label for this connection:", conn.label||"");
-      if(label!==null){ conn.label = label.trim(); renderConnections(); queueBoardSave(state.currentBoardId); }
-    });
-    connSvg.appendChild(hit);
-  });
-  renderConnLabelsAndDelete();
-}
-
-function renderConnLabelsAndDelete(){
-  canvasInner.querySelectorAll(".conn-label, .conn-del").forEach(n=>n.remove());
-  const hidden = hiddenNodeIds();
-  getData().connections.forEach(conn=>{
-    if(hidden.has(conn.from) || hidden.has(conn.to)) return;
-    const line = connLine(conn);
-    if(!line) return;
-    const mx=(line.x1+line.x2)/2, my=(line.y1+line.y2)/2;
-    if(conn.label){
-      const lbl = document.createElement("div");
-      lbl.className="conn-label"; lbl.style.left=mx+"px"; lbl.style.top=my+"px";
-      lbl.textContent = conn.label;
-      canvasInner.appendChild(lbl);
-    }
-    if(state.selectedConnId===conn.id){
-      const b = document.createElement("button");
-      b.className="conn-del"; b.style.left=mx+"px"; b.style.top=(my-18)+"px"; b.textContent="\u00d7";
-      b.addEventListener("click",()=>deleteConnection(conn.id));
-      canvasInner.appendChild(b);
-    }
-  });
-}
 
 /* ---------- render ---------- */
 function measureListOffsets(){

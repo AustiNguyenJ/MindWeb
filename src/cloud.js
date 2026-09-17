@@ -3,16 +3,16 @@ import { state } from "./state.js";
 import { el } from "./dom.js";
 import { showToast } from "./toast.js";
 import {
-  migrateNode,
   renderTypeToolbar,
   renderBoardList,
   renderBoardHeader,
   renderBoard,
-  centerView,
 } from "./app.js";
 import { ensureNotebookStructure } from "./boards.js";
 import { updateStorageBar } from "./storage.js";
 import { historyReset } from "./history.js";
+import { centerView } from "./view.js";
+import { migrateNode } from "./nodes.js";
 
 /* Supabase: client construction, the email magic-link sign-in flow, the
    sidebar's cloud status bar, and the cloud storage backend.

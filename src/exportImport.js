@@ -4,7 +4,8 @@ import { showToast } from "./toast.js";
 import { ensureNotebookStructure } from "./boards.js";
 import { migrateLongtextKinds } from "./blockTypes.js";
 import { queueTypesSave, persistIndex, persistBoard } from "./storage.js";
-import { migrateNode, renderBoardList, renderTypeToolbar } from "./app.js";
+import { renderBoardList, renderTypeToolbar } from "./app.js";
+import { migrateNode } from "./nodes.js";
 
 /* The single-file backup format: one JSON bundle carrying notebooks, pages,
    their blocks and connections, and the block-type library. Import adds
