@@ -69,14 +69,6 @@ import {
 import { showToast } from "./toast.js";
 import { copyText, copyBtnHtml } from "./clipboard.js";
 import {
-  updateCloudBar,
-  connectCloud,
-  cloudPersistIndex,
-  cloudPersistBoard,
-  cloudPersistDeleteBoard,
-  cloudSaveTypes,
-} from "./cloud.js";
-import {
   blankField,
   blankGroupRow,
   isCustomType,
@@ -87,7 +79,6 @@ import {
   setFieldVal,
   fieldKindLabel,
   loadCustomTypes,
-  migrateLongtextKinds,
 } from "./blockTypes.js";
 import { historyReset, undo, redo } from "./history.js";
 import { exportAll, importAll } from "./exportImport.js";

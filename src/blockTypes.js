@@ -2,7 +2,7 @@ import { state } from "./state.js";
 import { uid, looksRich } from "./util.js";
 import { EDITABLE_BUILTINS, TYPES_KEY, BUILTIN_KEYS } from "./constants.js";
 import { showToast } from "./toast.js";
-import { queueTypesSave } from "./storage.js";
+import { queueTypesSave, fsRead } from "./storage.js";
 
 /* The block-type library.
  *
