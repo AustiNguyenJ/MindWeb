@@ -5,10 +5,13 @@
   "type": "module",
   "description": "Mind Map Studio - notebooks, pages, and a block-based mind-mapping canvas.",
   "scripts": {
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "test": "cross-env MINDMAP_ENTRY=index.html vitest run",
+    "test:watch": "cross-env MINDMAP_ENTRY=index.html vitest",
+    "test:baseline": "vitest run",
+    "test:both": "npm run test:baseline && npm run test"
   },
   "devDependencies": {
+    "cross-env": "^10.1.0",
     "jsdom": "^26.1.0",
     "vitest": "^3.2.7"
   }

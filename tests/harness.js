@@ -127,6 +127,11 @@ function installFakeStorage(window, seed) {
   window.__storageMap = map;
 }
 
+/** Which entry the suite exercises. Defaults to the untouched original so a
+ *  bare `npm test` measures the baseline; the refactored app is checked by
+ *  running the same suite with MINDMAP_ENTRY=index.html. */
+export const DEFAULT_ENTRY = process.env.MINDMAP_ENTRY || "reference/mindmap-tool.original.html";
+
 /**
  * Boot an app entry point in jsdom.
  * @param {string} entry HTML file path, relative to the repo root.
@@ -134,7 +139,7 @@ function installFakeStorage(window, seed) {
  * @param {object} [opts.storage] seed for a fake window.storage; supplying it
  *        selects the "app" backend instead of the in-memory fallback.
  */
-export async function createApp(entry = "reference/mindmap-tool.original.html", opts = {}) {
+export async function createApp(entry = DEFAULT_ENTRY, opts = {}) {
   const file = resolve(ROOT, entry);
   const html = readFileSync(file, "utf8");
 

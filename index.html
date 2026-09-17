@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mind Map Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="src/styles.css">
+</head>
+<body>
+<div id="app">
+  <aside id="sidebar">
+    <div class="app-title"><span class="dot"></span>Mind Map Studio</div>
+    <button class="search-trigger" id="searchTrigger" title="Search (Shift+F)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+      <span>Search</span><kbd>\u21e7F</kbd>
+    </button>
+    <div id="listWrap" style="flex:1;display:flex;flex-direction:column;min-height:0;">
+      <div id="favWrap" style="display:none;">
+        <div class="fav-head" id="favHead" title="Your pinned pages, across every notebook">
+          <svg class="fav-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m6 9 6 6 6-6"/></svg>
+          <span class="fav-star">\u2605</span>
+          <span class="fav-label">Favorites</span>
+          <span class="fav-count" id="favCount">0</span>
+        </div>
+        <div id="favList"></div>
+        <div class="fav-divider"></div>
+      </div>
+      <div class="nb-toolbar">
+        <span class="section-label">Notebooks</span>
+        <button class="nb-add-nb" id="newNotebookBtn" title="New notebook">+ Notebook</button>
+      </div>
+      <div id="notebookTree"></div>
+    </div>
+    <button class="new-board-btn" id="newBoardBtn">+ New page</button>
+
+    <div class="storage-bar warn" id="storageBar">
+      <div class="sb-row"><span class="sb-dot"></span><span class="sb-label">Checking&hellip;</span></div>
+      <div class="sb-sub"></div>
+      <div class="sb-actions">
+        <button id="connectFolderBtn">Connect folder</button>
+        <button id="exportBtn">Export</button>
+        <button id="importBtn">Import</button>
+      </div>
+    </div>
+    <div class="storage-bar warn" id="cloudBar" style="display:none;margin-top:8px;">
+      <div class="sb-row"><span class="sb-dot"></span><span class="sb-label" id="cloudLabel">Not signed in</span></div>
+      <div class="sb-sub" id="cloudSub">Sign in for cloud sync</div>
+      <div class="sb-actions" id="cloudActions" style="gap:6px;">
+        <input id="cloudEmailInput" type="email" placeholder="you@email.com"
+               style="flex:1;min-width:0;font-size:12px;padding:5px 7px;border:1px solid var(--line);border-radius:6px;font-family:var(--body);">
+        <button id="cloudSignInBtn">Send link</button>
+      </div>
+    </div>
+    <details class="help">
+      <summary>Shortcuts &amp; tips</summary>
+      <div class="help-body">
+        <b>Notebooks &amp; pages</b><br>
+        Pages live inside notebooks, like OneNote. Click a notebook to
+        collapse it, the <b>+</b> on its row to add a page, the pencil to
+        rename, the <b>\u00d7</b> to delete. <b>+ Notebook</b> adds a new one.<br>
+        <b>Reorder</b> pages by dragging them up or down; drag onto another
+        notebook to move them there. Right-click a page (or use its <b>\u22ef</b>
+        button) to <b>pin</b> it to the top, rename, <b>duplicate the whole
+        page</b>, or delete. Pinned pages show a star and can still be reordered
+        among themselves.<br>
+        <b>Favorites</b> \u2014 pinned pages also collect in a Favorites strip at
+        the top of the sidebar, pulling together starred pages from every
+        notebook for quick access. It only appears once you've pinned something,
+        and collapses to a single row if you want it out of the way.<br><br>
+        <b>Copy between pages</b><br>
+        Select blocks, <kbd>Ctrl</kbd>+<kbd>C</kbd>, switch to any page, then
+        <kbd>Ctrl</kbd>+<kbd>V</kbd> \u2014 the blocks and the connections between
+        them come along.<br><br>
+        <b>Search</b><br>
+        <kbd>\u21e7F</kbd> (Shift+F) or the Search button opens the search box
+        as a pop-up, so your notebooks stay visible underneath. Narrow it with
+        the scope chips \u2014 all notebooks, the current notebook, or just this
+        page. Matches are highlighted; <kbd>Enter</kbd> jumps to the top hit,
+        <kbd>Esc</kbd> closes.<br><br>
+        <b>Custom blocks</b><br>
+        <b>Design blocks</b> in the toolbar opens the designer. The built-in
+        Note, Question, and Ticket blocks are listed there and can be edited
+        like any other &mdash; add fields, rename them, change placeholders.
+        Build your own types too, with any mix of fields &mdash; short text,
+        long text, formatted text, links, numbers, dates, dropdowns, checkboxes
+        &mdash; pick a header colour and width, and drag fields to reorder. A
+        live preview updates as you go. List and Week have special repeating
+        rows, so they're shown locked.<br><br>
+        <b>Repeating rows</b> \u2014 set a field's type to \u201cRepeating rows\u201d
+        to get an appendable group, like steps + description. Define the columns
+        each row should have, choose whether they sit <b>stacked</b> or
+        <b>side by side</b>, and drag the column handles to reorder them. On the
+        block you click <b>+</b> to add as many rows as you like. Every row gets
+        its own connection dot, so you can branch off any single step. Saved
+        types travel with your Export file.<br><br>
+        <b>Spawn at cursor</b><br>
+        <kbd>H</kbd> header &middot; <kbd>N</kbd> note &middot; <kbd>L</kbd> list &middot; <kbd>Q</kbd> question<br>
+        <kbd>T</kbd> ticket &middot; <kbd>W</kbd> week &middot; <kbd>G</kbd> image<br><br>
+        <b>Tickets</b><br>
+        A <b>ticket</b> box holds a number, link, assignee, customer, and note.
+        A <b>week</b> box groups a whole week's tickets with a shared notes area
+        &mdash; each ticket row has its own dot, so you can branch detail off any
+        one of them. The week label fills in with the current Mon–Sun range.
+        Click <b>↗</b> to open a ticket's link.<br><br>
+        <b>Copying</b><br>
+        Every field has a <b>⧉</b> button. On a ticket box, <b>Copy all</b>
+        grabs the whole record; in a week box the ⧉ beside the customer
+        copies that one ticket, and the ⧉ in the header copies the whole
+        week. The formatting bar has one too, for the note text.<br><br>
+        <b>Formatting</b><br>
+        Select a box to reveal its formatting bar: bold, italic, bullet and
+        numbered lists, and links. Pasting a bare URL turns it into a link
+        automatically. <kbd>Ctrl</kbd>+click any link to open it.<br><br>
+        <b>Connecting</b><br>
+        Drag the dot on a box's edge onto another box.<br>
+        Drop on <b>empty canvas</b> to open a picker \u2014 type to filter, <kbd>Enter</kbd>
+        picks the top match, and the new box appears already connected.<br>
+        Each <b>list item</b> has its own dot, so you can branch a hierarchy off any line.<br>
+        Double-click a line to label it.<br><br>
+        <b>Canvas</b><br>
+        <b>Left-drag</b> empty space to pan<br>
+        <b>Right-drag</b> anywhere to rubber-band select<br>
+        <b>Mouse wheel</b> to zoom<br>
+        <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo &middot; <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> redo<br>
+        <kbd>Ctrl</kbd>+<kbd>A</kbd> select all<br>
+        Drag any selected box to move the whole group<br>
+        <kbd>Ctrl</kbd>/<kbd>Shift</kbd>+click to add or remove from a selection<br>
+        <kbd>Del</kbd> removes everything selected<br>
+        <kbd>Ctrl</kbd>+<kbd>C</kbd> / <kbd>V</kbd> copy &amp; paste boxes<br>
+        Paste an image anywhere to drop it on the canvas<br><br>
+        <b>Collapsing</b><br>
+        Any box with arrows leading out of it gets a chevron at its head.
+        Click it to fold everything downstream out of sight; the box shows how
+        many are hidden. Click again to bring them back.<br><br>
+        <b>Colours</b><br>
+        Boxes start white. Click a box to reveal its swatches; with several
+        selected, a swatch recolours all of them at once.<br><br>
+        <b>Saving</b><br>
+        Pick a folder once with <b>Connect folder</b>. This page then creates
+        <b>saved-boards/</b> inside it and writes:<br>
+        <span style="font-family:var(--mono);font-size:10px;">saved-boards/index.json<br>saved-boards/board-&lt;id&gt;.json</span><br>
+        One file per page, rewritten on every change. Needs Chrome or Edge.
+        <b>Export</b> gives you a single backup file that works anywhere.
+      </div>
+    </details>
+  </aside>
+
+  <div id="main">
+    <div id="boardHeader">
+      <input id="boardTitle" placeholder="Untitled page">
+      <textarea id="boardDesc" placeholder="Add a short description for this page..." rows="1"></textarea>
+    </div>
+    <div id="toolbar">
+      <button class="add-btn" data-type="header"><span class="swab" style="background:#4757d1"></span>Header<span class="key">H</span></button>
+      <button class="add-btn" data-type="note"><span class="swab" style="background:#e5e7eb"></span>Note<span class="key">N</span></button>
+      <button class="add-btn" data-type="list"><span class="swab" style="background:#fde68a"></span>List<span class="key">L</span></button>
+      <button class="add-btn" data-type="question"><span class="swab" style="background:#e9d5ff"></span>Question<span class="key">Q</span></button>
+      <button class="add-btn" data-type="ticket"><span class="swab" style="background:#bbf7d0"></span>Ticket<span class="key">T</span></button>
+      <button class="add-btn" data-type="week"><span class="swab" style="background:#fecaca"></span>Week<span class="key">W</span></button>
+      <button class="add-btn" id="addImageBtn"><span class="swab" style="background:#bfdbfe"></span>Image<span class="key">G</span></button>
+      <div class="toolbar-sep"></div>
+      <span id="customTypeBtns" style="display:flex;gap:8px;flex-wrap:wrap;"></span>
+      <button class="add-btn" id="designBlocksBtn" title="Create and edit block types"><span class="swab" style="background:#c9a6ff"></span>Design blocks</button>
+      <div class="toolbar-sep"></div>
+      <div class="zoom-controls">
+        <button class="zoom-btn" id="zoomOut">&minus;</button>
+        <span class="zoom-pct" id="zoomPct">100%</span>
+        <button class="zoom-btn" id="zoomIn">+</button>
+        <button class="zoom-btn" id="zoomReset" title="Center view">&#9647;</button>
+      </div>
+    </div>
+    <div id="viewport">
+      <div id="canvasInner">
+        <svg id="connSvg" width="4200" height="3000">
+          <defs>
+            <marker id="arrowHead" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto">
+              <path d="M0,0 L8,4 L0,8 Z" fill="#9aa1ab"/>
+            </marker>
+          </defs>
+        </svg>
+      </div>
+    </div>
+  </div>
+</div>
+
+<input type="file" id="imgFileInput" accept="image/*" style="display:none">
+<input type="file" id="jsonFileInput" accept="application/json,.json" style="display:none">
+<div class="search-overlay" id="searchOverlay">
+  <div class="search-modal">
+    <div class="sm-inputrow">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+      <input id="searchInput" placeholder="Search across your notebooks..." autocomplete="off">
+      <button class="sm-close" id="searchClose" title="Close (Esc)">&times;</button>
+    </div>
+    <div class="sm-scoperow">
+      <span class="sm-scope-label">In:</span>
+      <div class="sm-scopes" id="searchScopes"></div>
+    </div>
+    <div class="sm-results" id="resultsList"></div>
+  </div>
+</div>
+
+<div class="picker-overlay" id="pickerOverlay">
+  <div class="picker-modal" id="pickerModal">
+    <input id="pickerInput" placeholder="Pick a block\u2026 (type to filter)" autocomplete="off">
+    <div class="picker-list" id="pickerList"></div>
+    <div class="picker-hint"><kbd>\u2191\u2193</kbd> move \u00b7 <kbd>Enter</kbd> select \u00b7 <kbd>Esc</kbd> cancel</div>
+  </div>
+</div>
+
+<div class="bd-overlay" id="bdOverlay">
+  <div class="bd-modal">
+    <div class="bd-head">
+      <h2>Block Designer</h2>
+      <button class="bd-close" id="bdClose">&times;</button>
+    </div>
+    <div class="bd-body">
+      <div class="bd-left">
+        <div id="bdTypeList"></div>
+        <button class="bd-new" id="bdNewType">+ New block type</button>
+      </div>
+      <div class="bd-right" id="bdEditor">
+        <div class="bd-empty">Select a block type to edit,<br>or create a new one.</div>
+      </div>
+    </div>
+    <div class="bd-foot">
+      <button class="bd-btn" id="bdDuplicate" style="display:none">Duplicate</button>
+      <div class="spacer"></div>
+      <button class="bd-btn" id="bdDone">Done</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast">Saved</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="src/app.js"></script>
+</body>
+</html>
