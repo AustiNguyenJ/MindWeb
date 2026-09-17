@@ -123,9 +123,42 @@ keys, not a fault in the schema, the policies, or this code. Parked.
 ## Layout
 
 ```
-index.html                         markup and the module entry tag
-src/styles.css                     all styling
-src/app.js                         the application
-tests/                             jsdom characterization suite
-reference/mindmap-tool.original.html   the pre-refactor file, kept for A/B testing
+index.html        markup and the module entry tag
+src/styles.css    all styling
+src/main.js       entry point: init order and nothing else
+tests/            jsdom characterization suite
+tools/            check.mjs (parse + module graph), prune-imports.mjs
+reference/        the pre-refactor single file, kept for A/B testing
 ```
+
+`src/` in rough dependency order — each layer uses the ones above it:
+
+| Module | What it owns |
+| --- | --- |
+| `constants.js` | Values fixed at runtime: keys, palettes, sizes, hotkeys, built-in schemas |
+| `util.js` | Ids, HTML escaping and sanitising, rich-text coercion, URL handling |
+| `state.js` | All shared mutable state, in one object |
+| `dom.js` `toast.js` `clipboard.js` | Element cache, status line, copy-to-clipboard |
+| `boards.js` | Document model: notebooks, pages, page ordering |
+| `blockTypes.js` | The block-type library, and `fieldVal`/`setFieldVal` |
+| `storage.js` `cloud.js` `exportImport.js` | The four backends, Supabase, backup files |
+| `nodes.js` `rows.js` `connections.js` `collapse.js` | Blocks, their rows, the arrows, subtree folding |
+| `selection.js` `view.js` `history.js` | Selection, pan/zoom, undo/redo |
+| `customFields.js` `nodeElement.js` `render.js` | Schema-driven fields, one block's DOM, drawing the page |
+| `canvas.js` `keyboard.js` `toolbar.js` | Pointer gestures, shortcuts and paste, the add buttons |
+| `sidebar.js` `pageMenu.js` `search.js` `picker.js` `designer.js` | The surrounding UI |
+
+### Two things to know before editing
+
+**Shared state goes through `state.js`.** ES modules make an imported binding
+read-only for the importer, so a module that needs to reassign
+`currentBoardId` cannot do it through a plain import. Reading and writing
+through one object avoids that, and makes it obvious at the call site that
+something is shared rather than local. State belonging to a single module
+(the designer's selected type, the picker's filter, the undo stacks) stays in
+that module.
+
+**Listeners are attached by explicit `init*()` functions,** called in order
+from `main.js`, not by bare statements at module top level — which would run
+whenever a module happened to be imported. A listener that is never attached
+raises no error, so this is the easiest thing to break silently here.
