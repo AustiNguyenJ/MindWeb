@@ -47,10 +47,8 @@
     <div class="storage-bar warn" id="cloudBar" style="display:none;margin-top:8px;">
       <div class="sb-row"><span class="sb-dot"></span><span class="sb-label" id="cloudLabel">Not signed in</span></div>
       <div class="sb-sub" id="cloudSub">Sign in for cloud sync</div>
-      <div class="sb-actions" id="cloudActions" style="gap:6px;">
-        <input id="cloudEmailInput" type="email" placeholder="you@email.com"
-               style="flex:1;min-width:0;font-size:12px;padding:5px 7px;border:1px solid var(--line);border-radius:6px;font-family:var(--body);">
-        <button id="cloudSignInBtn">Send link</button>
+      <div class="sb-actions" id="cloudActions">
+        <button id="cloudAccountBtn">Account</button>
       </div>
     </div>
     <details class="help">
@@ -229,6 +227,39 @@
       <button class="bd-btn" id="bdDuplicate" style="display:none">Duplicate</button>
       <div class="spacer"></div>
       <button class="bd-btn" id="bdDone">Done</button>
+    </div>
+  </div>
+</div>
+
+<div class="auth-gate" id="authGate">
+  <form class="auth-card" id="authForm" autocomplete="on">
+    <div class="auth-title">Mind Map Studio</div>
+    <div class="auth-subtitle" id="authSubtitle">Sign in to continue</div>
+    <div class="auth-fields" id="authFields"></div>
+    <div class="auth-error" id="authError"></div>
+    <button type="submit" class="auth-submit" id="authSubmitBtn">Sign in</button>
+    <div class="auth-links" id="authLinks"></div>
+  </form>
+</div>
+
+<div class="bd-overlay" id="acctOverlay">
+  <div class="bd-modal" style="max-width:400px;">
+    <div class="bd-head">
+      <h2>Account</h2>
+      <button class="bd-close" id="acctClose">&times;</button>
+    </div>
+    <div class="bd-body" style="flex-direction:column;padding:20px;">
+      <div class="auth-fields">
+        <label>Signed in as<input id="acctEmail" disabled></label>
+        <label>New password<input id="acctNewPassword" type="password" autocomplete="new-password" placeholder="Leave blank to keep current password"></label>
+        <label>Confirm new password<input id="acctConfirmPassword" type="password" autocomplete="new-password"></label>
+      </div>
+      <div class="auth-error" id="acctError"></div>
+    </div>
+    <div class="bd-foot">
+      <button class="bd-btn" id="acctSignOutBtn">Sign out</button>
+      <div class="spacer"></div>
+      <button class="bd-btn primary" id="acctSaveBtn">Update password</button>
     </div>
   </div>
 </div>

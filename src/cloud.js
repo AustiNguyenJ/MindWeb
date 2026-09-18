@@ -48,55 +48,274 @@ if(SUPABASE_URL && SUPABASE_PUBLISHABLE_KEY){
   console.warn("[mindmap] Supabase not configured -- set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY in .env to enable cloud sync.");
 }
 
-/* ---------- Supabase auth (email magic link) ---------------------------
+/* Where email links (verification, password reset) send the browser back
+   to. Deliberately just origin+path, not the full href: Supabase appends
+   its own hash or query params on top of this, and a Supabase project's
+   allowed Redirect URLs are normally registered as exactly this shape. */
+function authRedirectURL(){
+  return window.location.origin + window.location.pathname;
+}
+
+/* Supabase reports an expired or already-used link as error/error_description
+   params on the redirect, not as an auth event -- GoTrueClient's own URL
+   parsing swallows them internally (see _initialize() in the SDK) without
+   telling any onAuthStateChange listener. Read them ourselves, synchronously,
+   before that internal parsing has a chance to run (it's async, gated behind
+   the client's first await), then scrub the address bar either way so a
+   used-up recovery link can't be replayed by refreshing the page. */
+function readAuthUrlError(){
+  const raw = (window.location.hash || window.location.search || "").replace(/^[#?]/, "");
+  const desc = new URLSearchParams(raw).get("error_description");
+  return desc ? desc.replace(/\+/g, " ") : null;
+}
+function clearAuthUrlParams(){
+  // best-effort: a file:// origin (this app's other distribution shape) can
+  // refuse replaceState entirely, and losing the tidy-up is harmless next to
+  // letting that exception abort the rest of boot
+  try{
+    const url = new URL(window.location.href);
+    url.hash = "";
+    ["error", "error_code", "error_description", "access_token", "refresh_token",
+     "expires_in", "expires_at", "token_type", "type", "code"].forEach((k)=>url.searchParams.delete(k));
+    window.history.replaceState(window.history.state, "", url.toString());
+  }catch(err){ console.warn("[mindmap] couldn't clean up the auth redirect URL", err); }
+}
+let authUrlError = state.supabaseClient ? readAuthUrlError() : null;
+if(authUrlError) clearAuthUrlParams();
+
+/* ---------- Supabase auth gate (password, email-verified at sign-up) ---
    Every RLS policy in the schema checks auth.uid(), so nothing will read
-   or write through Supabase until someone is signed in. This wires a
-   minimal email-link sign-in flow in the sidebar. It does not touch board
-   storage yet -- backend stays "folder"/"app"/"memory" until that's next.
------------------------------------------------------------------------- */
+   or write through Supabase until someone is signed in. When Supabase is
+   configured, a full-screen gate (#authGate) blocks the rest of the app
+   from booting until requireCloudAuth()'s promise resolves -- see its call
+   in main.js. The gate cycles through four forms (sign in, create account,
+   forgot password, reset password); "Confirm email" in the project's Auth
+   settings is what makes sign-up a one-time email-verification step rather
+   than an instant login.
+
+   The sidebar's cloudBar, once signed in, only shows status plus a way
+   into the account settings modal (change password / sign out) -- it no
+   longer hosts a form of its own. */
 let cloudConnectAttempted = false;   // guards against connecting twice per page load
+let authMode = "signin";             // signin | signup | forgot | sent | reset
+let authSentMessage = "";            // shown in "sent" mode
+let authGateResolve = null;
+let authGatePromise = null;
+
+/* Resolves once someone is signed in (immediately, if Supabase isn't
+   configured or a session already exists). main.js awaits this before
+   loading board data, so nothing renders behind an unauthenticated gate. */
+export function requireCloudAuth(){
+  if(!state.supabaseClient || state.supabaseSession) return Promise.resolve();
+  if(!authGatePromise){
+    authGatePromise = new Promise((resolve)=>{ authGateResolve = resolve; });
+    showAuthGate();
+  }
+  return authGatePromise;
+}
+
+function resolveAuthGate(){
+  hideAuthGate();
+  if(authGateResolve){ authGateResolve(); authGateResolve = null; }
+}
+
+function showAuthGate(){
+  const gate = el("authGate");
+  if(!gate) return;
+  gate.classList.add("open");
+  renderAuthGate();
+}
+function hideAuthGate(){
+  const gate = el("authGate");
+  if(gate) gate.classList.remove("open");
+}
+
+function setAuthBusy(busy, label){
+  const btn = el("authSubmitBtn");
+  if(!btn) return;
+  btn.disabled = busy;
+  if(label) btn.textContent = label;
+}
+
+function renderAuthGate(){
+  const subtitle = el("authSubtitle"), fields = el("authFields"), links = el("authLinks"), submitBtn = el("authSubmitBtn");
+  el("authError").textContent = "";
+  submitBtn.style.display = "";
+  submitBtn.disabled = false;
+
+  if(authMode==="signup"){
+    subtitle.textContent = "Create an account to continue";
+    fields.innerHTML =
+      '<label>Email<input id="authEmailInput" type="email" autocomplete="email" required></label>'+
+      '<label>Password<input id="authPasswordInput" type="password" autocomplete="new-password" required></label>';
+    submitBtn.textContent = "Create account";
+    links.innerHTML = '<button type="button" class="auth-link" id="authToggleBtn">Already have an account? Sign in</button>';
+    el("authToggleBtn").addEventListener("click", ()=>{ authMode="signin"; renderAuthGate(); });
+  } else if(authMode==="forgot"){
+    subtitle.textContent = "Enter your email and we\u2019ll send a reset link";
+    fields.innerHTML = '<label>Email<input id="authEmailInput" type="email" autocomplete="email" required></label>';
+    submitBtn.textContent = "Send reset link";
+    links.innerHTML = '<button type="button" class="auth-link" id="authToggleBtn">Back to sign in</button>';
+    el("authToggleBtn").addEventListener("click", ()=>{ authMode="signin"; renderAuthGate(); });
+  } else if(authMode==="sent"){
+    subtitle.textContent = authSentMessage;
+    fields.innerHTML = "";
+    submitBtn.style.display = "none";
+    links.innerHTML = '<button type="button" class="auth-link" id="authToggleBtn">Back to sign in</button>';
+    el("authToggleBtn").addEventListener("click", ()=>{ authMode="signin"; renderAuthGate(); });
+  } else if(authMode==="reset"){
+    subtitle.textContent = "Choose a new password for your account";
+    fields.innerHTML =
+      '<label>New password<input id="authPasswordInput" type="password" autocomplete="new-password" required></label>'+
+      '<label>Confirm new password<input id="authPassword2Input" type="password" autocomplete="new-password" required></label>';
+    submitBtn.textContent = "Set new password";
+    links.innerHTML = "";
+  } else {
+    authMode = "signin";
+    subtitle.textContent = "Sign in to continue";
+    fields.innerHTML =
+      '<label>Email<input id="authEmailInput" type="email" autocomplete="email" required></label>'+
+      '<label>Password<input id="authPasswordInput" type="password" autocomplete="current-password" required></label>';
+    submitBtn.textContent = "Sign in";
+    links.innerHTML =
+      '<button type="button" class="auth-link" id="authForgotBtn">Forgot password?</button>'+
+      '<button type="button" class="auth-link" id="authToggleBtn">New here? Create an account</button>';
+    el("authForgotBtn").addEventListener("click", ()=>{ authMode="forgot"; renderAuthGate(); });
+    el("authToggleBtn").addEventListener("click", ()=>{ authMode="signup"; renderAuthGate(); });
+    if(authUrlError){
+      el("authError").textContent = authUrlError+" Request a new link below.";
+      authUrlError = null;
+    }
+  }
+}
+
+async function onAuthSubmit(e){
+  e.preventDefault();
+  const emailInput = el("authEmailInput");
+  const email = emailInput ? emailInput.value.trim() : "";
+  if(authMode==="signin") return doSignIn(email, el("authPasswordInput").value);
+  if(authMode==="signup") return doSignUp(email, el("authPasswordInput").value);
+  if(authMode==="forgot") return doForgotPassword(email);
+  if(authMode==="reset") return doResetPassword(el("authPasswordInput").value, el("authPassword2Input").value);
+}
+
+async function doSignIn(email, password){
+  const err = el("authError");
+  if(!email || email.indexOf("@")===-1){ err.textContent = "Enter a valid email"; return; }
+  if(!password){ err.textContent = "Enter your password"; return; }
+  setAuthBusy(true, "Signing in\u2026");
+  const { error } = await state.supabaseClient.auth.signInWithPassword({ email, password });
+  if(error){
+    err.textContent = error.message==="Email not confirmed"
+      ? "Check your email to verify your account first" : error.message;
+    setAuthBusy(false, "Sign in");
+    return;
+  }
+  // onAuthStateChange (SIGNED_IN) closes the gate from here
+}
+
+async function doSignUp(email, password){
+  const err = el("authError");
+  if(!email || email.indexOf("@")===-1){ err.textContent = "Enter a valid email"; return; }
+  if(password.length < 6){ err.textContent = "Password must be at least 6 characters"; return; }
+  setAuthBusy(true, "Creating account\u2026");
+  const { data, error } = await state.supabaseClient.auth.signUp({
+    email, password, options:{ emailRedirectTo: authRedirectURL() }
+  });
+  if(error){ err.textContent = error.message; setAuthBusy(false, "Create account"); return; }
+  if(!data.session){
+    // "Confirm email" is on for this project: signInWithPassword will
+    // refuse until the link in that email is clicked
+    authSentMessage = "Check "+email+" for a verification link, then sign in.";
+    authMode = "sent";
+    renderAuthGate();
+  }
+  // if a session came back, confirmation is off and SIGNED_IN closes the
+  // gate on its own
+}
+
+async function doForgotPassword(email){
+  const err = el("authError");
+  if(!email || email.indexOf("@")===-1){ err.textContent = "Enter a valid email"; return; }
+  setAuthBusy(true, "Sending\u2026");
+  const { error } = await state.supabaseClient.auth.resetPasswordForEmail(email, { redirectTo: authRedirectURL() });
+  setAuthBusy(false, "Send reset link");
+  if(error){ err.textContent = error.message; return; }
+  authSentMessage = "Check "+email+" for a link to reset your password.";
+  authMode = "sent";
+  renderAuthGate();
+}
+
+async function doResetPassword(password, password2){
+  const err = el("authError");
+  if(password.length < 6){ err.textContent = "Password must be at least 6 characters"; return; }
+  if(password !== password2){ err.textContent = "Passwords don\u2019t match"; return; }
+  setAuthBusy(true, "Saving\u2026");
+  const { error } = await state.supabaseClient.auth.updateUser({ password });
+  setAuthBusy(false, "Set new password");
+  if(error){ err.textContent = error.message; return; }
+  showToast("Password updated");
+  authMode = "signin";
+  // the recovery link already carries a live session, so the normal
+  // SIGNED_IN handling never fires for it -- resolve the gate directly
+  resolveAuthGate();
+}
+
+/* ---------- Account settings modal (change password / sign out) -------- */
+export function initAuthGate(){
+  const form = el("authForm");
+  if(form) form.addEventListener("submit", onAuthSubmit);
+
+  const acctBtn = el("cloudAccountBtn");
+  if(acctBtn) acctBtn.addEventListener("click", openAccountModal);
+  const acctClose = el("acctClose");
+  if(acctClose) acctClose.addEventListener("click", closeAccountModal);
+  const acctOverlay = el("acctOverlay");
+  if(acctOverlay) acctOverlay.addEventListener("click", (e)=>{ if(e.target===acctOverlay) closeAccountModal(); });
+  const acctSave = el("acctSaveBtn");
+  if(acctSave) acctSave.addEventListener("click", saveAccountPassword);
+  const acctSignOut = el("acctSignOutBtn");
+  if(acctSignOut) acctSignOut.addEventListener("click", async ()=>{ await state.supabaseClient.auth.signOut(); });
+}
+
+function openAccountModal(){
+  const overlay = el("acctOverlay");
+  if(!overlay) return;
+  el("acctEmail").value = (state.supabaseSession && state.supabaseSession.user) ? state.supabaseSession.user.email : "";
+  el("acctNewPassword").value = "";
+  el("acctConfirmPassword").value = "";
+  el("acctError").textContent = "";
+  overlay.classList.add("open");
+}
+function closeAccountModal(){
+  const overlay = el("acctOverlay");
+  if(overlay) overlay.classList.remove("open");
+}
+
+async function saveAccountPassword(){
+  const p1 = el("acctNewPassword").value, p2 = el("acctConfirmPassword").value;
+  const err = el("acctError");
+  err.textContent = "";
+  if(!p1 && !p2){ err.textContent = "Enter a new password"; return; }
+  if(p1.length < 6){ err.textContent = "Password must be at least 6 characters"; return; }
+  if(p1 !== p2){ err.textContent = "Passwords don\u2019t match"; return; }
+  const btn = el("acctSaveBtn");
+  btn.disabled = true; btn.textContent = "Saving\u2026";
+  const { error } = await state.supabaseClient.auth.updateUser({ password: p1 });
+  btn.disabled = false; btn.textContent = "Update password";
+  if(error){ err.textContent = error.message; return; }
+  showToast("Password updated");
+  closeAccountModal();
+}
 
 export function updateCloudBar(){
   const bar = el("cloudBar");
   if(!bar) return;
-  if(!state.supabaseClient){ bar.style.display = "none"; return; }
+  if(!state.supabaseClient || !state.supabaseSession){ bar.style.display = "none"; return; }
   bar.style.display = "";
-  const label = el("cloudLabel"), sub = el("cloudSub"), actions = el("cloudActions");
-  if(state.supabaseSession){
-    bar.className = "storage-bar ok";
-    label.textContent = "Signed in";
-    sub.textContent = state.supabaseSession.user.email;
-    actions.innerHTML = '<button id="cloudSignOutBtn">Sign out</button>';
-    el("cloudSignOutBtn").addEventListener("click", async ()=>{ await state.supabaseClient.auth.signOut(); });
-  } else {
-    bar.className = "storage-bar warn";
-    label.textContent = "Not signed in";
-    sub.textContent = "Sign in for cloud sync";
-    actions.innerHTML =
-      '<input id="cloudEmailInput" type="email" placeholder="you@email.com" '+
-      'style="flex:1;min-width:0;font-size:12px;padding:5px 7px;border:1px solid var(--line);border-radius:6px;font-family:var(--body);">'+
-      '<button id="cloudSignInBtn">Send link</button>';
-    el("cloudSignInBtn").addEventListener("click", sendMagicLink);
-    el("cloudEmailInput").addEventListener("keydown",(e)=>{ if(e.key==="Enter") sendMagicLink(); });
-  }
-}
-
-async function sendMagicLink(){
-  const input = el("cloudEmailInput");
-  const email = input ? input.value.trim() : "";
-  if(!email || email.indexOf("@")===-1){ showToast("Enter a valid email"); return; }
-  const btn = el("cloudSignInBtn");
-  if(btn){ btn.disabled = true; btn.textContent = "Sending\u2026"; }
-  const { error } = await state.supabaseClient.auth.signInWithOtp({
-    email, options:{ emailRedirectTo: window.location.href }
-  });
-  if(error){
-    showToast("Couldn't send link: "+error.message);
-    if(btn){ btn.disabled = false; btn.textContent = "Send link"; }
-    return;
-  }
-  showToast("Check your email for a sign-in link");
-  if(btn) btn.textContent = "Link sent";
+  bar.className = "storage-bar ok";
+  el("cloudLabel").textContent = "Signed in";
+  el("cloudSub").textContent = state.supabaseSession.user.email;
 }
 
 if(state.supabaseClient){
@@ -104,19 +323,33 @@ if(state.supabaseClient){
   state.supabaseClient.auth.getSession().then(({data})=>{
     state.supabaseSession = data.session;
     updateCloudBar();
-    if(state.supabaseSession) connectCloud();
+    if(state.supabaseSession){
+      resolveAuthGate();
+      connectCloud();
+      // an expired/used link's error can't reach the gate if a session from
+      // elsewhere already got us past it -- say so some other way
+      if(authUrlError){ showToast(authUrlError); authUrlError = null; }
+    }
   });
   state.supabaseClient.auth.onAuthStateChange((event, session)=>{
     state.supabaseSession = session;
     updateCloudBar();
-    if(event==="SIGNED_IN"){ showToast("Signed in as "+session.user.email); connectCloud(); }
+    if(event==="PASSWORD_RECOVERY"){
+      // the recovery link signs the visitor in on the spot -- force the
+      // reset-password form instead of treating this as a normal sign-in
+      authMode = "reset";
+      showAuthGate();
+      return;
+    }
+    if(event==="SIGNED_IN" && session){
+      showToast("Signed in as "+session.user.email);
+      resolveAuthGate();
+      connectCloud();
+    }
     if(event==="SIGNED_OUT"){
-      showToast("Signed out");
-      cloudConnectAttempted = false;
-      // stop trying to save to Supabase now that there's no session; local
-      // edits still work, they just won't persist until signed in again
-      if(state.backend==="cloud") state.backend = "memory";
-      updateStorageBar();
+      // reload rather than unwind in-memory board/notebook state by hand --
+      // the next load starts clean and the gate reappears on its own
+      window.location.reload();
     }
   });
 }

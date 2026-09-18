@@ -7,13 +7,14 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:test": "cross-env VITE_SUPABASE_URL= VITE_SUPABASE_PUBLISHABLE_KEY= vite build",
     "preview": "vite preview",
     "test": "cross-env MINDMAP_ENTRY=index.html vitest run",
     "test:watch": "cross-env MINDMAP_ENTRY=index.html vitest",
     "test:baseline": "vitest run",
     "test:both": "npm run test:baseline && npm run test",
     "test:dist": "cross-env MINDMAP_ENTRY=dist/mindmap-tool.html vitest run",
-    "test:all": "npm run test:baseline && npm run test && npm run build && npm run test:dist",
+    "test:all": "npm run test:baseline && npm run test && npm run build:test && npm run test:dist",
     "check": "node tools/check.mjs",
     "lint": "eslint src tests tools",
     "verify": "npm run check && npm run lint && npm test"

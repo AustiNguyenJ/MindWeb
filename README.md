@@ -66,10 +66,19 @@ exercise the app as shipped rather than its internals.
 npm test              # the app (index.html + src/)
 npm run test:baseline # the untouched original, for comparison
 npm run test:both     # both, in order
-npm run test:dist     # the built single-file artifact
-npm run test:all      # baseline, app, build, then the built artifact
+npm run test:dist     # the built single-file artifact (whatever is currently in dist/)
+npm run test:all      # baseline, app, a credential-blanked build, then that built artifact
 npm run check         # syntax-check src/app.js
 ```
+
+`test:all` builds with `npm run build:test` rather than `npm run build`: the real
+build inlines whatever Supabase credentials are in `.env`, and since sign-in is
+required whenever Supabase is configured (see Cloud sync status below), a real
+build can only pass the artifact through the gate with a live network
+connection, which the suite deliberately has none of. `build:test` blanks the
+two `VITE_SUPABASE_*` vars for that one build, matching how the other two
+stages already run with Supabase "configured absent". Run a plain `npm run
+build` yourself when you want the real distributable.
 
 `test:baseline` runs the same suite against `reference/mindmap-tool.original.html`,
 the untouched pre-refactor file. Keeping both green is what makes the
@@ -114,7 +123,16 @@ never defined, so that hover rule does nothing. `blankSubfield()` and
 
 ## Cloud sync status
 
-Sign-in works (Supabase email magic link), but writes fail with
+Whenever Supabase is configured (`.env` has both `VITE_SUPABASE_*` values), a
+full-screen gate blocks the app until someone is signed in -- there's no local
+fallback while it's up. The gate cycles through sign in, create account
+(email-verified once via Supabase's "Confirm email" setting), forgot
+password, and reset password; account settings (change password, sign out)
+live behind the "Account" button in the sidebar once signed in. Leave the
+env vars blank and the gate never appears, which is how local-only use and
+the test suite both run.
+
+Sign-in itself works (Supabase email/password), but writes fail with
 `42501 new row violates row-level security policy`. Postgres is not receiving
 JWT claims on live requests, so `auth.uid()` resolves NULL despite a valid
 session — an issue specific to Supabase's newer asymmetric (ES256) JWT signing

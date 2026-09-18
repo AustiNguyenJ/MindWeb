@@ -42,6 +42,7 @@ import { initCanvas } from "./canvas.js";
 import { initToolbar } from "./toolbar.js";
 import { initKeyboard } from "./keyboard.js";
 import { initDesigner, renderTypeToolbar } from "./designer.js";
+import { initAuthGate, requireCloudAuth } from "./cloud.js";
 
 
 async function loadAll(){
@@ -127,6 +128,11 @@ window.addEventListener("beforeunload",(e)=>{
   initToolbar();
   initKeyboard();
   initDesigner();
+  initAuthGate();
+
+  // when Supabase is configured, block here until someone is signed in --
+  // the rest of boot (loading board data, first render) waits on it
+  await requireCloudAuth();
 
   // determine backend first (restore folder handle if present)
   await restoreFolderHandle();
