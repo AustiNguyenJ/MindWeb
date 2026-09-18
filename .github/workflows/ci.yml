@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # parses every file and bundles the entry -- catches a module
+      # importing a name its neighbour never exported
+      - run: npm run check
+
+      # ESLint no-undef -- catches a name nobody imported that bundling
+      # alone would read as a global
+      - run: npm run lint
+
+      # baseline (the pre-refactor reference file), the app, a build with
+      # Supabase credentials blanked, then that built single-file artifact --
+      # needs no secrets, see build:test in package.json
+      - run: npm run test:all
