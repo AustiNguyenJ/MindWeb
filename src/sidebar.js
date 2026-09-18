@@ -7,7 +7,7 @@ import { openPageMenu } from "./pageMenu.js";
 import { centerView } from "./view.js";
 import { renderBoard } from "./render.js";
 import { historyReset } from "./history.js";
-import { queueIndexSave, persistDeleteBoard, saveBoardNow } from "./storage.js";
+import { queueIndexSave, persistDeleteBoard, persistDeleteNotebook, saveBoardNow } from "./storage.js";
 
 /* The sidebar: notebooks, the pages inside them, favourites, and the page
    header. Pages are ordered pinned-first and then by sort order, and can be
@@ -226,6 +226,7 @@ export function deleteNotebook(id){
   const fallback = state.notebooks.find(n=>n.id!==id).id;
   pages.forEach(b=>b.notebookId=fallback);
   state.notebooks = state.notebooks.filter(n=>n.id!==id);
+  persistDeleteNotebook(id);
   renderBoardList(); queueIndexSave();
 }
 

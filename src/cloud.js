@@ -471,7 +471,17 @@ export async function cloudPersistBoard(id){
 
 export async function cloudPersistDeleteBoard(id){
   // ON DELETE CASCADE on nodes/connections/board_members handles the rest
-  try{ await state.supabaseClient.from("boards").delete().eq("id", id); }catch(err){}
+  const { error } = await state.supabaseClient.from("boards").delete().eq("id", id);
+  if(error) throw error;
+}
+
+/* cloudPersistIndex() only ever upserts the notebooks currently in
+   state.notebooks, so a notebook removed locally never gets removed from
+   Supabase on its own -- it just comes back on the next cloudReadAll().
+   Deleting a notebook needs this explicit row delete alongside it. */
+export async function cloudPersistDeleteNotebook(id){
+  const { error } = await state.supabaseClient.from("notebooks").delete().eq("id", id);
+  if(error) throw error;
 }
 
 export async function cloudSaveTypes(){

@@ -7,6 +7,7 @@ import {
   cloudPersistIndex,
   cloudPersistBoard,
   cloudPersistDeleteBoard,
+  cloudPersistDeleteNotebook,
   cloudSaveTypes,
 } from "./cloud.js";
 import { recordChange } from "./history.js";
@@ -215,7 +216,18 @@ export async function persistDeleteBoard(id){
     if(state.backend==="folder"){ await fsDelete(boardFileName(id)); await fsWrite("index.json", indexPayload()); }
     else if(state.backend==="cloud"){ await cloudPersistDeleteBoard(id); }
     else if(state.backend==="app"){ await window.storage.delete("mindmap:board:"+id, false); }
-  }catch(err){}
+  }catch(err){ console.error("board delete", err); showToast("Couldn't delete the page from "+state.backend+" — see console"); }
+}
+
+/* Only the cloud backend needs an explicit call here: folder/app both
+   persist the whole notebook list as one document via the queueIndexSave()
+   that follows this, so removing a notebook from state.notebooks is already
+   enough for them. Cloud stores notebooks as individual rows, which
+   cloudPersistIndex()'s upsert-only pass can never remove on its own. */
+export async function persistDeleteNotebook(id){
+  if(state.backend!=="cloud") return;
+  try{ await cloudPersistDeleteNotebook(id); }
+  catch(err){ console.error("notebook delete", err); showToast("Couldn't delete the notebook from cloud — see console"); }
 }
 
 /* names kept from before so the rest of the app is unchanged */
