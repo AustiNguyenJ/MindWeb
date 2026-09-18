@@ -10,6 +10,7 @@ import { createNode } from "./nodes.js";
 import { viewportCenterCanvasCoords } from "./view.js";
 import { renderBoard } from "./render.js";
 import { queueTypesSave } from "./storage.js";
+import { confirmModal } from "./confirmModal.js";
 
 /* The Block Designer: define a block type as a list of fields, with a live
    preview. The editable built-ins appear here alongside user-defined types,
@@ -115,14 +116,15 @@ export function newType(){
   renderEditor();
 }
 
-export function deleteType(id){
+export async function deleteType(id){
   if(state.customTypes[id] && state.customTypes[id].builtin){ showToast("Built-in blocks can't be deleted"); return; }
   const inUse = getData().nodes.some(n=>n.type===id) ||
     state.boards.some(b=>(state.boardsData[b.id]||{nodes:[]}).nodes.some(n=>n.type===id));
   const msg = inUse
-    ? "Delete this block type? Blocks already placed with it will keep their data but show as plain. This can't be undone."
-    : "Delete this block type? This can't be undone.";
-  if(!confirm(msg)) return;
+    ? "Blocks already placed with it will keep their data but show as plain. This can't be undone."
+    : "This can't be undone.";
+  const ok = await confirmModal({ title:"Delete this block type?", message:msg });
+  if(!ok) return;
   delete state.customTypes[id];
   if(bdEditingId===id) bdEditingId = Object.keys(state.customTypes)[0] || null;
   queueTypesSave();

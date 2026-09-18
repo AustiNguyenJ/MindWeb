@@ -1,5 +1,9 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { createApp, exportJson, tick } from "./harness.js";
+import { createApp, exportJson, tick, DEFAULT_ENTRY } from "./harness.js";
+
+// the confirm modal is new, app-only behavior -- the untouched original used
+// window.confirm()
+const onBaseline = DEFAULT_ENTRY.includes("original");
 
 let app;
 beforeEach(async () => { app = await createApp(); });
@@ -128,16 +132,32 @@ describe("creating a custom type", () => {
     expect(new Set(ids).size).toBe(2);
   });
 
-  it("deletes a custom type after confirming", async () => {
+  it.skipIf(onBaseline)("deletes a custom type after confirming", async () => {
     newCustomType("Disposable");
     open();
     app.click(app.$("#bdTypeList [data-del]"));
-    done();
+    // deletion asks first, through an in-app modal rather than a native
+    // browser confirm() -- nothing has happened until it's confirmed
+    expect(app.$("#confirmOverlay").classList.contains("open")).toBe(true);
+    app.click(app.$("#confirmOkBtn"));
     await tick(20);
+    done();
 
     const dump = await exportJson(app);
     expect(Object.values(dump.blockTypes).map((t) => t.name)).not.toContain("Disposable");
     expect(app.$("#customTypeBtns .add-btn")).toBeNull();
+  });
+
+  it.skipIf(onBaseline)("keeps the type if the delete is cancelled", async () => {
+    newCustomType("Keep me");
+    open();
+    app.click(app.$("#bdTypeList [data-del]"));
+    app.click(app.$("#confirmCancelBtn"));
+    await tick(20);
+    done();
+
+    const dump = await exportJson(app);
+    expect(Object.values(dump.blockTypes).map((t) => t.name)).toContain("Keep me");
   });
 
   it("supports every field kind the designer offers", () => {

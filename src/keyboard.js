@@ -21,6 +21,7 @@ import { toggleSearch, closeSearch } from "./search.js";
 import { closePageMenu } from "./pageMenu.js";
 import { cleanupConnectVisuals, fromItemLabel } from "./canvas.js";
 import { queueBoardSave } from "./storage.js";
+import { cancelConfirmModal } from "./confirmModal.js";
 
 /* Keyboard shortcuts and pasting.
  *
@@ -87,6 +88,12 @@ export function initKeyboard(){
     if(e.key==="Escape" && el("searchOverlay").classList.contains("open")){
       e.preventDefault();
       closeSearch();
+      return;
+    }
+    // ...or cancels a confirm modal, same precedence
+    if(e.key==="Escape" && el("confirmOverlay").classList.contains("open")){
+      e.preventDefault();
+      cancelConfirmModal();
       return;
     }
 
