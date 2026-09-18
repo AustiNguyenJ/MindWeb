@@ -1,5 +1,9 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { createApp, tick } from "./harness.js";
+import { createApp, tick, DEFAULT_ENTRY } from "./harness.js";
+
+// the confirm modal and page multi-select are new, app-only behavior --
+// the untouched original used window.confirm() and had no multi-select
+const onBaseline = DEFAULT_ENTRY.includes("original");
 
 let app;
 beforeEach(async () => { app = await createApp(); });
@@ -10,6 +14,11 @@ const menuFor = (pageId) => {
   return app.$("#pageMenu");
 };
 const pageIdAt = (i) => app.$$(".board-item")[i].dataset.id;
+
+// the confirm modal (replacing window.confirm) needs an explicit click and a
+// tick for its promise to resolve before the delete actually happens
+const confirmDelete = async () => { app.click(app.$("#confirmOkBtn")); await tick(10); };
+const cancelDelete = async () => { app.click(app.$("#confirmCancelBtn")); await tick(10); };
 
 describe("notebooks", () => {
   it("adds a notebook and drops straight into renaming it", () => {
@@ -54,15 +63,28 @@ describe("notebooks", () => {
     expect(app.$$(".nb")).toHaveLength(1);
   });
 
-  it("moves orphaned pages to another notebook when one is deleted", () => {
+  it.skipIf(onBaseline)("moves orphaned pages to another notebook when one is deleted", async () => {
     app.click(app.$("#newNotebookBtn"));
     app.$(".nb-name input").dispatchEvent(new app.window.Event("blur"));
     app.click(app.$$(".nb-add-page")[1]);
     expect(app.$$(".board-item")).toHaveLength(2);
 
     app.click(app.$$(".nb-del-btn")[1]);
+    expect(app.$("#confirmOverlay").classList.contains("open")).toBe(true);
+    await confirmDelete();
+
     expect(app.$$(".nb")).toHaveLength(1);
     expect(app.$$(".board-item")).toHaveLength(2); // both pages survived
+  });
+
+  it.skipIf(onBaseline)("keeps the notebook if the delete is cancelled", async () => {
+    app.click(app.$("#newNotebookBtn"));
+    app.$(".nb-name input").dispatchEvent(new app.window.Event("blur"));
+    expect(app.$$(".nb")).toHaveLength(2);
+
+    app.click(app.$$(".nb-del-btn")[1]);
+    await cancelDelete();
+    expect(app.$$(".nb")).toHaveLength(2);
   });
 });
 
@@ -107,13 +129,80 @@ describe("pages", () => {
     expect(app.pages()).toHaveLength(1);
   });
 
-  it("deletes a page once there is more than one", () => {
+  it.skipIf(onBaseline)("deletes a page once there is more than one", async () => {
     app.click(app.$("#newBoardBtn"));
     expect(app.pages()).toHaveLength(2);
 
     const menu = menuFor(pageIdAt(1));
     app.click(menu.querySelector('[data-act="del"]'));
+    // deletion asks first, through an in-app modal rather than a native
+    // browser confirm() -- nothing has happened until it's confirmed
+    expect(app.$("#confirmOverlay").classList.contains("open")).toBe(true);
+    expect(app.pages()).toHaveLength(2);
+    await confirmDelete();
+
+    expect(app.$("#confirmOverlay").classList.contains("open")).toBe(false);
     expect(app.pages()).toHaveLength(1);
+  });
+
+  it.skipIf(onBaseline)("keeps the page if the delete is cancelled", async () => {
+    app.click(app.$("#newBoardBtn"));
+    const menu = menuFor(pageIdAt(1));
+    app.click(menu.querySelector('[data-act="del"]'));
+    await cancelDelete();
+    expect(app.pages()).toHaveLength(2);
+  });
+
+  it.skipIf(onBaseline)("selects a range with shift-click and deletes them together", async () => {
+    app.click(app.$("#newBoardBtn"));
+    app.click(app.$("#newBoardBtn"));
+    app.click(app.$("#newBoardBtn"));
+    expect(app.pages()).toHaveLength(4);
+
+    const items = app.$$(".board-item");
+    app.click(items[0]);
+    items[2].dispatchEvent(new app.window.MouseEvent("click", { bubbles: true, shiftKey: true }));
+    expect(app.$$(".board-item.multi-selected")).toHaveLength(3);
+    expect(app.$("#multiSelectBar").style.display).not.toBe("none");
+    expect(app.$("#multiSelectCount").textContent).toBe("3 pages selected");
+
+    app.click(app.$("#multiSelectDeleteBtn"));
+    expect(app.$("#confirmTitle").textContent).toBe("Delete 3 pages?");
+    await confirmDelete();
+
+    expect(app.pages()).toHaveLength(1);
+    expect(app.$("#multiSelectBar").style.display).toBe("none");
+  });
+
+  it.skipIf(onBaseline)("toggles individual pages with ctrl-click, and a plain click clears the selection", async () => {
+    app.click(app.$("#newBoardBtn"));
+    app.click(app.$("#newBoardBtn"));
+    const items = () => app.$$(".board-item");
+
+    items()[0].dispatchEvent(new app.window.MouseEvent("click", { bubbles: true, ctrlKey: true }));
+    items()[2].dispatchEvent(new app.window.MouseEvent("click", { bubbles: true, ctrlKey: true }));
+    expect(app.$$(".board-item.multi-selected")).toHaveLength(2);
+
+    // ctrl-click again removes it from the selection
+    items()[0].dispatchEvent(new app.window.MouseEvent("click", { bubbles: true, ctrlKey: true }));
+    expect(app.$$(".board-item.multi-selected")).toHaveLength(1);
+
+    // a plain click clears the selection entirely and just opens that page
+    app.click(items()[1]);
+    expect(app.$$(".board-item.multi-selected")).toHaveLength(0);
+    expect(app.$("#multiSelectBar").style.display).toBe("none");
+  });
+
+  it.skipIf(onBaseline)("won't let a multi-delete take every page", async () => {
+    app.click(app.$("#newBoardBtn"));
+    const items = app.$$(".board-item");
+    items[0].dispatchEvent(new app.window.MouseEvent("click", { bubbles: true, ctrlKey: true }));
+    items[1].dispatchEvent(new app.window.MouseEvent("click", { bubbles: true, ctrlKey: true }));
+
+    app.click(app.$("#multiSelectDeleteBtn"));
+    expect(app.$("#confirmOverlay").classList.contains("open")).toBe(false);
+    expect(app.$("#toast").textContent).toBe("Can't delete all your pages — keep at least one");
+    expect(app.pages()).toHaveLength(2);
   });
 });
 

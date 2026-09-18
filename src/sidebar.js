@@ -8,10 +8,44 @@ import { centerView } from "./view.js";
 import { renderBoard } from "./render.js";
 import { historyReset } from "./history.js";
 import { queueIndexSave, persistDeleteBoard, persistDeleteNotebook, saveBoardNow } from "./storage.js";
+import { confirmModal } from "./confirmModal.js";
 
 /* The sidebar: notebooks, the pages inside them, favourites, and the page
    header. Pages are ordered pinned-first and then by sort order, and can be
    dragged to reorder or to move between notebooks. */
+
+/* ---------- multi-select (for bulk-deleting pages) ---------------------
+   Local to this module, like the designer's selected-type or the picker's
+   filter -- nothing outside the sidebar needs to know which pages are
+   multi-selected. Plain click always means "open this page" and clears the
+   selection; Ctrl/Cmd-click toggles a page in or out of it; Shift-click
+   extends it as a range over the currently rendered page order. */
+let selectedBoardIds = new Set();
+let lastClickedBoardId = null;
+
+function pruneSelection(){
+  const live = new Set(state.boards.map(b=>b.id));
+  for(const id of selectedBoardIds) if(!live.has(id)) selectedBoardIds.delete(id);
+  // lastClickedBoardId is a shift-click anchor, not necessarily itself
+  // selected (a plain click sets it without adding to the selection) -- only
+  // drop it once the page it points at is actually gone
+  if(lastClickedBoardId && !live.has(lastClickedBoardId)) lastClickedBoardId = null;
+}
+
+function updateMultiSelectBar(){
+  pruneSelection();
+  const bar = el("multiSelectBar");
+  if(!bar) return;
+  if(selectedBoardIds.size < 2){ bar.style.display = "none"; return; }
+  bar.style.display = "";
+  el("multiSelectCount").textContent = selectedBoardIds.size+" pages selected";
+}
+
+function clearMultiSelect(){
+  selectedBoardIds.clear();
+  lastClickedBoardId = null;
+  renderBoardList();
+}
 
 /* ---------- sidebar ---------- */
 export const treeEl = () => el("notebookTree");
@@ -61,7 +95,8 @@ export function renderBoardList(){
     const pages = boardsInNotebook(nb.id);
     const pagesHtml = pages.length
       ? pages.map(b=>
-          '<div class="board-item '+(b.id===state.currentBoardId?'active':'')+(b.pinned?' pinned':'')+'" draggable="true" data-id="'+b.id+'">' +
+          '<div class="board-item '+(b.id===state.currentBoardId?'active':'')+(b.pinned?' pinned':'')+
+            (selectedBoardIds.has(b.id)?' multi-selected':'')+'" draggable="true" data-id="'+b.id+'">' +
           (b.pinned?'<span class="pin-ico" title="Pinned">\u2605</span>':'') +
           '<span class="bname">'+escapeHtml(b.name||"Untitled")+'</span>' +
           '<button class="board-menu-btn" data-id="'+b.id+'" title="Page options">\u22ef</button></div>').join('')
@@ -101,7 +136,33 @@ export function renderBoardList(){
 
   // pages: click to open, dbl-click to rename, menu button, drag to move/reorder
   host.querySelectorAll(".board-item").forEach(item=>{
-    item.addEventListener("click",(e)=>{ if(!e.target.closest(".board-menu-btn")) switchBoard(item.dataset.id); });
+    item.addEventListener("click",(e)=>{
+      if(e.target.closest(".board-menu-btn")) return;
+      const id = item.dataset.id;
+      if(e.ctrlKey || e.metaKey){
+        if(selectedBoardIds.has(id)) selectedBoardIds.delete(id); else selectedBoardIds.add(id);
+        lastClickedBoardId = id;
+        renderBoardList();
+        return;
+      }
+      if(e.shiftKey && lastClickedBoardId){
+        const order = [...host.querySelectorAll(".board-item")].map(x=>x.dataset.id);
+        const a = order.indexOf(lastClickedBoardId), b = order.indexOf(id);
+        if(a!==-1 && b!==-1){
+          const [lo, hi] = a<b ? [a,b] : [b,a];
+          order.slice(lo, hi+1).forEach(pid=>selectedBoardIds.add(pid));
+          renderBoardList();
+          return;
+        }
+      }
+      const hadSelection = selectedBoardIds.size > 0;
+      selectedBoardIds.clear();
+      lastClickedBoardId = id;   // still the anchor for a later shift-click
+      switchBoard(id);
+      // switchBoard() no-ops (no re-render) if this was already the open
+      // page, which would otherwise leave stale multi-select highlighting
+      if(hadSelection && id===state.currentBoardId) renderBoardList();
+    });
     item.addEventListener("dblclick",(e)=>{ if(!e.target.closest(".board-menu-btn")) startRenameBoard(item.dataset.id, item); });
     item.addEventListener("contextmenu",(e)=>{ e.preventDefault(); openPageMenu(item.dataset.id, e.clientX, e.clientY); });
     item.addEventListener("dragstart",(e)=>{
@@ -157,6 +218,8 @@ export function renderBoardList(){
       }
     });
   });
+
+  updateMultiSelectBar();
 }
 
 export function clearDropMarks(){
@@ -213,16 +276,17 @@ export function newNotebook(){
   startRenameNotebook(nb.id);
 }
 
-export function deleteNotebook(id){
+export async function deleteNotebook(id){
   if(state.notebooks.length===1){ showToast("Keep at least one notebook"); return; }
   const pages = boardsInNotebook(id);
   const nb = state.notebooks.find(n=>n.id===id);
-  let msg = 'Delete notebook "'+(nb?nb.name:"")+'"?';
+  let msg = "";
   if(pages.length){
     const other = state.notebooks.find(n=>n.id!==id);
-    msg += "\n\nIts "+pages.length+" page(s) will move to \""+other.name+"\". (To delete the pages too, remove them first.)";
+    msg = "Its "+pages.length+" page(s) will move to \""+other.name+"\". (To delete the pages too, remove them first.)";
   }
-  if(!confirm(msg)) return;
+  const ok = await confirmModal({ title:'Delete notebook "'+(nb?nb.name:"")+'"?', message:msg });
+  if(!ok) return;
   const fallback = state.notebooks.find(n=>n.id!==id).id;
   pages.forEach(b=>b.notebookId=fallback);
   state.notebooks = state.notebooks.filter(n=>n.id!==id);
@@ -268,16 +332,42 @@ export function newBoard(nbId){
   el("boardTitle").focus();
 }
 
-export function deleteBoard(id){
-  if(state.boards.length===1){ showToast("Can't delete your only page"); return; }
-  if(!confirm("Delete this page and everything on it? This can't be undone.")) return;
-  const nbId = (state.boards.find(b=>b.id===id)||{}).notebookId;
-  state.boards = state.boards.filter(b=>b.id!==id);
-  delete state.boardsData[id];
-  persistDeleteBoard(id);
-  if(nbId) renumberNotebook(nbId);
-  if(state.currentBoardId===id) state.currentBoardId = state.boards[0].id;
+/** Delete one or more pages together, with one confirmation and one save.
+ *  Used both for a single page (from the context menu or its own delete
+ *  button) and for a multi-selection (the "Delete N pages" bar). */
+async function deleteBoards(ids){
+  if(!ids.length) return;
+  if(ids.length >= state.boards.length){
+    showToast(ids.length===1 ? "Can't delete your only page" : "Can't delete all your pages — keep at least one");
+    return;
+  }
+  const ok = await confirmModal({
+    title: ids.length===1 ? "Delete this page?" : "Delete "+ids.length+" pages?",
+    message: (ids.length===1 ? "Everything on it" : "Everything on them")+" will be lost. This can't be undone."
+  });
+  if(!ok) return;
+  const idSet = new Set(ids);
+  const affectedNotebooks = new Set();
+  ids.forEach(id=>{
+    const b = state.boards.find(x=>x.id===id);
+    if(b) affectedNotebooks.add(b.notebookId);
+    delete state.boardsData[id];
+    persistDeleteBoard(id);
+  });
+  state.boards = state.boards.filter(b=>!idSet.has(b.id));
+  affectedNotebooks.forEach(nbId=>{ if(nbId) renumberNotebook(nbId); });
+  if(idSet.has(state.currentBoardId)) state.currentBoardId = state.boards[0].id;
+  selectedBoardIds.clear();
+  lastClickedBoardId = null;
   renderBoardList(); renderBoardHeader(); centerView(); renderBoard(); queueIndexSave();
+}
+
+/* A page that's part of an active multi-selection deletes the whole
+   selection, whichever page in it triggered the delete (context menu, its
+   own button, or the bar) -- otherwise just itself. */
+export function deleteBoard(id){
+  const ids = (selectedBoardIds.size>=2 && selectedBoardIds.has(id)) ? [...selectedBoardIds] : [id];
+  return deleteBoards(ids);
 }
 
 /* Deep-copy a whole page (all blocks + connections) into the same notebook,
@@ -327,4 +417,6 @@ export function initSidebar(){
     favCollapsed = !favCollapsed;
     el("favWrap").classList.toggle("collapsed", favCollapsed);
   });
+  el("multiSelectDeleteBtn").addEventListener("click", ()=>{ deleteBoards([...selectedBoardIds]); });
+  el("multiSelectClearBtn").addEventListener("click", clearMultiSelect);
 }

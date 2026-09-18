@@ -108,6 +108,17 @@
   .board-item.drop-above{box-shadow:inset 0 2px 0 var(--accent);}
   .board-item.drop-below{box-shadow:inset 0 -2px 0 var(--accent);}
   .nb-emptypages{font-size:11px;color:var(--muted-2);padding:5px 8px 5px 14px;font-style:italic;}
+  .board-item.multi-selected{background:var(--accent-soft);box-shadow:inset 0 0 0 1px var(--accent);}
+  .board-item.multi-selected .bname{color:var(--accent);font-weight:600;}
+
+  .multiselect-bar{display:flex;align-items:center;gap:8px;margin-bottom:8px;padding:7px 9px;
+    border:1px solid var(--accent);background:var(--accent-soft);border-radius:8px;}
+  .multiselect-bar span{flex:1;font-size:12px;font-weight:600;color:var(--accent);}
+  .multiselect-bar button{border:1px solid var(--line);background:#fff;border-radius:6px;padding:5px 9px;
+    font-size:11.5px;font-family:var(--body);cursor:pointer;color:var(--ink);}
+  .multiselect-bar button:hover{border-color:var(--accent);color:var(--accent);}
+  .multiselect-bar button.danger{border-color:var(--danger);color:var(--danger);}
+  .multiselect-bar button.danger:hover{background:var(--danger);color:#fff;}
 
   /* page context menu */
   .page-menu{position:fixed;z-index:130;background:#fff;border:1px solid var(--line);border-radius:9px;
@@ -421,6 +432,8 @@
   .bd-btn:hover{border-color:var(--accent);color:var(--accent);}
   .bd-btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;}
   .bd-btn.primary:hover{background:var(--accent-strong);color:#fff;}
+  .bd-btn.danger{background:var(--danger);border-color:var(--danger);color:#fff;}
+  .bd-btn.danger:hover{background:#a53324;color:#fff;}
 
   /* auth gate: full-screen sign in / sign up / forgot / reset password */
   .auth-gate{position:fixed;inset:0;background:var(--canvas,#f4f5f8);z-index:200;display:none;

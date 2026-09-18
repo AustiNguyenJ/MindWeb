@@ -17,6 +17,11 @@
       <span>Search</span><kbd>⇧F</kbd>
     </button>
     <div id="listWrap" style="flex:1;display:flex;flex-direction:column;min-height:0;">
+      <div class="multiselect-bar" id="multiSelectBar" style="display:none;">
+        <span id="multiSelectCount"></span>
+        <button type="button" id="multiSelectDeleteBtn">Delete</button>
+        <button type="button" id="multiSelectClearBtn">Cancel</button>
+      </div>
       <div id="favWrap" style="display:none;">
         <div class="fav-head" id="favHead" title="Your pinned pages, across every notebook">
           <svg class="fav-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m6 9 6 6 6-6"/></svg>
@@ -227,6 +232,23 @@
       <button class="bd-btn" id="bdDuplicate" style="display:none">Duplicate</button>
       <div class="spacer"></div>
       <button class="bd-btn" id="bdDone">Done</button>
+    </div>
+  </div>
+</div>
+
+<div class="bd-overlay" id="confirmOverlay">
+  <div class="bd-modal" style="max-width:380px;">
+    <div class="bd-head">
+      <h2 id="confirmTitle">Are you sure?</h2>
+      <button class="bd-close" id="confirmClose">&times;</button>
+    </div>
+    <div class="bd-body" style="padding:4px 20px 18px;">
+      <p id="confirmMessage" style="margin:0;font-size:13px;line-height:1.55;color:var(--ink);white-space:pre-line;"></p>
+    </div>
+    <div class="bd-foot">
+      <button class="bd-btn" id="confirmCancelBtn">Cancel</button>
+      <div class="spacer"></div>
+      <button class="bd-btn danger" id="confirmOkBtn">Delete</button>
     </div>
   </div>
 </div>
