@@ -284,45 +284,6 @@ export function nodeElement(node){
     });
   });
 
-  /* single ticket fields */
-  [["tk-no","ticketNo"],["tk-link","link"],["tk-assigned","assigned"],["tk-customer","customer"]]
-    .forEach(([cls, prop])=>{
-      const f = div.querySelector("."+cls);
-      if(!f) return;
-      f.addEventListener("pointerdown", e=>e.stopPropagation());
-      f.addEventListener("focus", ()=>selectNode(node.id));
-      f.addEventListener("input", e=>{
-        node[prop] = e.target.value;
-        if(prop==="link"){
-          const ob = div.querySelector(".tk-fields .tk-open");
-          if(ob) ob.classList.toggle("off", !node.link);
-        }
-        queueBoardSave(state.currentBoardId);
-      });
-    });
-  if(node.type==="ticket"){
-    const openBtn = div.querySelector(".tk-fields .tk-open");
-    if(openBtn){
-      openBtn.addEventListener("pointerdown", e=>e.stopPropagation());
-      openBtn.addEventListener("click",(e)=>{
-        e.stopPropagation();
-        openLinkBackground(node.link);
-      });
-    }
-    [["cp-no", ()=>node.ticketNo],
-     ["cp-link", ()=>node.link],
-     ["cp-assigned", ()=>node.assigned],
-     ["cp-customer", ()=>node.customer],
-     ["cp-all", ()=>ticketSummary({no:node.ticketNo, link:node.link, assigned:node.assigned,
-                                   customer:node.customer, note:richToText(node.bodyHtml)})]
-    ].forEach(([cls, get])=>{
-      const b = div.querySelector("."+cls);
-      if(!b) return;
-      b.addEventListener("pointerdown", e=>e.stopPropagation());
-      b.addEventListener("click",(e)=>{ e.stopPropagation(); copyText(get(), b); });
-    });
-  }
-
   /* week container rows */
   div.querySelectorAll(".tr-no, .tr-link, .tr-note, .tr-assigned, .tr-customer").forEach(fld=>{
     fld.addEventListener("pointerdown", e=>e.stopPropagation());

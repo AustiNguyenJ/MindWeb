@@ -18,6 +18,30 @@ import { renderTypeToolbar } from "./designer.js";
    module evaluates, exactly as they were in the single-file version, so the
    sign-in flow keeps its original ordering. */
 
+/* Built-in node properties that live at the top level (not in node.fields --
+   see CLAUDE.md's BUILTIN_KEYS trap) but have no dedicated Supabase column.
+   The nodes table only has columns for the fields every node shares
+   (title/body_html/color/...); anything type-specific beyond that would
+   otherwise need a schema migration every time a built-in type gains a new
+   property. Instead these ride inside the same `fields` jsonb column custom
+   block types already use, namespaced under __builtin so a Designer-defined
+   custom field can never collide with one of these names. */
+const CLOUD_BUILTIN_EXTRAS = ["ticketNo", "link", "assigned", "customer", "items", "tickets", "weekLabel", "image"];
+
+export function withBuiltinExtras(fields, node){
+  const extras = {};
+  let has = false;
+  CLOUD_BUILTIN_EXTRAS.forEach(key=>{
+    if(node[key]!==undefined){ extras[key] = node[key]; has = true; }
+  });
+  return has ? { ...fields, __builtin: extras } : fields;
+}
+
+export function splitBuiltinExtras(fields){
+  const { __builtin, ...rest } = fields || {};
+  return { fields: rest, extras: __builtin || {} };
+}
+
 /* ---------- Supabase client (cloud backend, work in progress) ---------
    Configured through .env (see .env.example), not hardcoded here.
 
@@ -398,11 +422,14 @@ async function cloudReadAll(){
     ]);
     if(nErr || cErr){ console.error("[mindmap] cloud board read failed", b.id, nErr||cErr); state.boardsData[b.id]={nodes:[],connections:[]}; continue; }
     state.boardsData[b.id] = {
-      nodes: (nodeRows||[]).map(r=>migrateNode({
-        id:r.id, type:r.type, x:r.x, y:r.y, w:r.w, h:r.h, title:r.title||"",
-        body:r.body||"", bodyHtml:r.body_html||"", color:r.color||"#ffffff",
-        fields:r.fields||{}, collapsed:!!r.collapsed
-      })),
+      nodes: (nodeRows||[]).map(r=>{
+        const { fields, extras } = splitBuiltinExtras(r.fields);
+        return migrateNode({
+          id:r.id, type:r.type, x:r.x, y:r.y, w:r.w, h:r.h, title:r.title||"",
+          body:r.body||"", bodyHtml:r.body_html||"", color:r.color||"#ffffff",
+          fields, collapsed:!!r.collapsed, ...extras
+        });
+      }),
       connections: (connRows||[]).map(r=>({
         id:r.id, from:r.from_node, fromItem:r.from_item, to:r.to_node, toItem:r.to_item, label:r.label
       }))
@@ -454,7 +481,7 @@ export async function cloudPersistBoard(id){
     const rows = data.nodes.map(n=>({
       id:n.id, board_id:id, type:n.type, x:n.x||0, y:n.y||0, w:n.w||null, h:n.h||null,
       title:n.title||"", body:n.body||"", body_html:n.bodyHtml||"", color:n.color||"#ffffff",
-      fields:n.fields||{}, collapsed:!!n.collapsed, updated_by:cloudUserId()
+      fields:withBuiltinExtras(n.fields||{}, n), collapsed:!!n.collapsed, updated_by:cloudUserId()
     }));
     const { error } = await state.supabaseClient.from("nodes").upsert(rows);
     if(error) throw error;
