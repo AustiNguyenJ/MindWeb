@@ -7,6 +7,24 @@ export const COLORS = ["#ffffff","#fde68a","#bfdbfe","#bbf7d0","#fecaca","#e9d5f
 export const DEFAULT_SIZE = { header:[220,50], note:[220,140], list:[230,150], question:[220,140],
                        image:[240,190], ticket:[262,190], week:[330,260] };
 export const HOTKEYS = { h:"header", n:"note", l:"list", q:"question", g:"image", t:"ticket", w:"week" };
+/* Quick-access toolbar + hotkeys, user-configurable via the Toolbar settings
+   modal. Global by default; a board may opt into its own copy (see
+   toolbarConfig.js). BUILTIN_TOOLBAR_META supplies the swatch colour and
+   label for each built-in that can appear on the bar -- everything else
+   (custom ct_* types) gets its accent/name from state.customTypes instead. */
+export const TOOLBAR_KEY = "mindmap:toolbar";
+export const BUILTIN_TOOLBAR_META = {
+  header:   { label:"Header",   accent:"#4757d1" },
+  note:     { label:"Note",     accent:"#e5e7eb" },
+  list:     { label:"List",     accent:"#fde68a" },
+  question: { label:"Question", accent:"#e9d5ff" },
+  ticket:   { label:"Ticket",   accent:"#bbf7d0" },
+  week:     { label:"Week",     accent:"#fecaca" },
+  image:    { label:"Image",    accent:"#bfdbfe" },
+};
+/* image can't be spawned mid-connection-drag (it needs an async file picker,
+   and there's no synchronous node to attach the in-progress connection to). */
+export const NO_CONNECT_SPAWN = { image:1 };
 /* Custom block types the user defines in the Block Designer. Each is a
    schema: a list of fields, plus a default width. Stored per-file so a
    board carries its own block library. Persisted under mindmap:types. */

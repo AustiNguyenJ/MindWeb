@@ -9,6 +9,7 @@ import { renderBoard } from "./render.js";
 import { historyReset } from "./history.js";
 import { queueIndexSave, persistDeleteBoard, persistDeleteNotebook, saveBoardNow } from "./storage.js";
 import { confirmModal } from "./confirmModal.js";
+import { renderQuickAccessToolbar } from "./toolbar.js";
 
 /* The sidebar: notebooks, the pages inside them, favourites, and the page
    header. Pages are ordered pinned-first and then by sort order, and can be
@@ -405,6 +406,10 @@ export function renderBoardHeader(){
   const b = getBoard();
   el("boardTitle").value = b.name || "";
   el("boardDesc").value = b.description || "";
+  // the quick-access bar/hotkeys can differ per board (see toolbarConfig.js),
+  // so refresh it whenever the current board changes -- every board-switch
+  // path already calls this function right after updating currentBoardId
+  renderQuickAccessToolbar();
 }
 
 /* Wire the page header fields and the sidebar buttons. */

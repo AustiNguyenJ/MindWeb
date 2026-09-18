@@ -1,6 +1,7 @@
 import { el } from "./dom.js";
 import { state } from "./state.js";
-import { HOTKEYS } from "./constants.js";
+import { NO_CONNECT_SPAWN } from "./constants.js";
+import { hotkeyTypeMap } from "./toolbarConfig.js";
 import { isTextEntry } from "./util.js";
 import { showToast } from "./toast.js";
 import { getData, findNode } from "./boards.js";
@@ -99,8 +100,8 @@ export function initKeyboard(){
 
     // spawn-connected while dragging a link
     if(state.dragState && state.dragState.mode==="connect" && plain){
-      const type = HOTKEYS[e.key.toLowerCase()];
-      if(type && type!=="image"){
+      const type = hotkeyTypeMap()[e.key.toLowerCase()];
+      if(type && !NO_CONNECT_SPAWN[type]){
         e.preventDefault();
         const from = state.dragState;
         cleanupConnectVisuals();
@@ -116,7 +117,7 @@ export function initKeyboard(){
     }
 
     if(plain && !inField){
-      const type = HOTKEYS[e.key.toLowerCase()];
+      const type = hotkeyTypeMap()[e.key.toLowerCase()];
       if(type){ e.preventDefault(); spawnAtCursor(type); return; }
     }
 

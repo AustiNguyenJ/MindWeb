@@ -30,6 +30,8 @@ import {
 } from "./storage.js";
 import { el } from "./dom.js";
 import { seedBuiltinTypes, reconstructMissingTypes, loadCustomTypes } from "./blockTypes.js";
+import { loadToolbarConfig } from "./toolbarConfig.js";
+import { initToolbarSettings } from "./toolbarSettings.js";
 import { historyReset } from "./history.js";
 import { exportAll, importAll } from "./exportImport.js";
 import { centerView } from "./view.js";
@@ -130,6 +132,7 @@ window.addEventListener("beforeunload",(e)=>{
   initKeyboard();
   initDesigner();
   initConfirmModal();
+  initToolbarSettings();
   initAuthGate();
 
   // when Supabase is configured, block here until someone is signed in --
@@ -141,6 +144,7 @@ window.addEventListener("beforeunload",(e)=>{
   if(state.backend!=="folder" && typeof window.storage!=="undefined" && window.storage) state.backend="app";
   await loadCustomTypes();
   seedBuiltinTypes();
+  await loadToolbarConfig();
   await loadAll();
   reconstructMissingTypes();
   renderTypeToolbar();

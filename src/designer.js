@@ -11,6 +11,7 @@ import { viewportCenterCanvasCoords } from "./view.js";
 import { renderBoard } from "./render.js";
 import { queueTypesSave } from "./storage.js";
 import { confirmModal } from "./confirmModal.js";
+import { renderQuickAccessToolbar } from "./toolbar.js";
 
 /* The Block Designer: define a block type as a list of fields, with a live
    preview. The editable built-ins appear here alongside user-defined types,
@@ -47,6 +48,7 @@ export function openDesigner(){
 export function closeDesigner(){
   el("bdOverlay").classList.remove("open");
   renderTypeToolbar();
+  renderQuickAccessToolbar();
   renderBoard();
 }
 

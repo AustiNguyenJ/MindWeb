@@ -156,16 +156,12 @@
       <textarea id="boardDesc" placeholder="Add a short description for this page..." rows="1"></textarea>
     </div>
     <div id="toolbar">
-      <button class="add-btn" data-type="header"><span class="swab" style="background:#4757d1"></span>Header<span class="key">H</span></button>
-      <button class="add-btn" data-type="note"><span class="swab" style="background:#e5e7eb"></span>Note<span class="key">N</span></button>
-      <button class="add-btn" data-type="list"><span class="swab" style="background:#fde68a"></span>List<span class="key">L</span></button>
-      <button class="add-btn" data-type="question"><span class="swab" style="background:#e9d5ff"></span>Question<span class="key">Q</span></button>
-      <button class="add-btn" data-type="ticket"><span class="swab" style="background:#bbf7d0"></span>Ticket<span class="key">T</span></button>
-      <button class="add-btn" data-type="week"><span class="swab" style="background:#fecaca"></span>Week<span class="key">W</span></button>
+      <span id="builtinToolbarBtns" style="display:flex;gap:8px;flex-wrap:wrap;"></span>
       <button class="add-btn" id="addImageBtn"><span class="swab" style="background:#bfdbfe"></span>Image<span class="key">G</span></button>
       <div class="toolbar-sep"></div>
       <span id="customTypeBtns" style="display:flex;gap:8px;flex-wrap:wrap;"></span>
       <button class="add-btn" id="designBlocksBtn" title="Create and edit block types"><span class="swab" style="background:#c9a6ff"></span>Design blocks</button>
+      <button class="add-btn" id="toolbarSettingsBtn" title="Choose which blocks show on the toolbar and their hotkeys"><span class="swab" style="background:#9aa1ab"></span>Toolbar settings</button>
       <div class="toolbar-sep"></div>
       <div class="zoom-controls">
         <button class="zoom-btn" id="zoomOut">&minus;</button>
@@ -249,6 +245,32 @@
       <button class="bd-btn" id="confirmCancelBtn">Cancel</button>
       <div class="spacer"></div>
       <button class="bd-btn danger" id="confirmOkBtn">Delete</button>
+    </div>
+  </div>
+</div>
+
+<div class="bd-overlay" id="toolbarSettingsOverlay">
+  <div class="bd-modal" style="max-width:520px;">
+    <div class="bd-head">
+      <h2>Toolbar settings</h2>
+      <button class="bd-close" id="tsClose">&times;</button>
+    </div>
+    <div class="bd-body" style="flex-direction:column;padding:16px 20px;overflow:auto;">
+      <label class="ts-override">
+        <input type="checkbox" id="tsBoardOverride">
+        Use a separate toolbar and hotkeys for this page only
+      </label>
+      <div class="ts-head-row">
+        <span class="ts-col-name">Block type</span>
+        <span class="ts-col-onbar">On bar</span>
+        <span class="ts-col-hotkey">Hotkey</span>
+      </div>
+      <div id="tsList"></div>
+      <div class="auth-error" id="tsError"></div>
+    </div>
+    <div class="bd-foot">
+      <div class="spacer"></div>
+      <button class="bd-btn" id="tsDone">Done</button>
     </div>
   </div>
 </div>

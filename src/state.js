@@ -18,6 +18,7 @@ export const state = {
   currentBoardId: null,
   notebooks: [],              // [{id, name, collapsed}]
   customTypes: {},            // typeId -> {id,name,accent,width,fields:[...]}
+  toolbarConfig: null,        // global quick-access/hotkey config; see toolbarConfig.js
 
   // --- selection ----------------------------------------------------------
   selection: new Set(),       // ids of selected boxes

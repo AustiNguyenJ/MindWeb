@@ -1,7 +1,7 @@
 import { state } from "./state.js";
 import { el } from "./dom.js";
 import { showToast } from "./toast.js";
-import { IDX_KEY, TYPES_KEY, APP_KEY_LIMIT } from "./constants.js";
+import { IDX_KEY, TYPES_KEY, APP_KEY_LIMIT, TOOLBAR_KEY } from "./constants.js";
 import { ensureNotebookStructure } from "./boards.js";
 import {
   cloudPersistIndex,
@@ -123,7 +123,11 @@ export function parseBoardText(txt){
   if(!p || typeof p!=="object" || !Array.isArray(p.nodes)){
     return { ok:false, data:{nodes:[], connections:[]} };
   }
-  return { ok:true, data:{ nodes:p.nodes, connections:Array.isArray(p.connections)?p.connections:[] } };
+  return { ok:true, data:{
+    nodes:p.nodes, connections:Array.isArray(p.connections)?p.connections:[],
+    toolbarOverride: !!p.toolbarOverride,
+    toolbarConfig: (p.toolbarConfig && typeof p.toolbarConfig==="object") ? p.toolbarConfig : null,
+  } };
 }
 
 export function parseIndex(raw){
@@ -145,7 +149,9 @@ export function boardPayload(id){
   return JSON.stringify({
     id, name:b.name||"", description:b.description||"",
     updated: new Date().toISOString(),
-    nodes: d.nodes, connections: d.connections
+    nodes: d.nodes, connections: d.connections,
+    toolbarOverride: !!d.toolbarOverride,
+    toolbarConfig: d.toolbarConfig || null,
   }, null, 2);
 }
 
@@ -244,6 +250,18 @@ export async function saveTypesNow(){
 }
 
 export function queueTypesSave(){ clearTimeout(state.saveTimers.__types); state.saveTimers.__types = setTimeout(saveTypesNow, 400); }
+
+/* The global quick-access toolbar / hotkey config. Cloud sync is parked
+   (see README "Cloud sync status"), so this only persists for folder/app
+   backends, matching how the rest of this file degrades for cloud. */
+export async function saveToolbarConfigNow(){
+  try{
+    if(state.backend==="folder"){ await fsWrite("toolbar-config.json", JSON.stringify(state.toolbarConfig,null,2)); }
+    else if(state.backend==="app"){ await window.storage.set(TOOLBAR_KEY, JSON.stringify(state.toolbarConfig), false); }
+  }catch(err){ console.error("toolbar config save", err); }
+}
+
+export function queueToolbarConfigSave(){ clearTimeout(state.saveTimers.__toolbarConfig); state.saveTimers.__toolbarConfig = setTimeout(saveToolbarConfigNow, 400); }
 
 export function queueIndexSave(){ clearTimeout(state.saveTimers.__index); state.saveTimers.__index = setTimeout(saveIndexNow, 500); }
 

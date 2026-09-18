@@ -435,6 +435,21 @@
   .bd-btn.danger{background:var(--danger);border-color:var(--danger);color:#fff;}
   .bd-btn.danger:hover{background:#a53324;color:#fff;}
 
+  /* toolbar settings modal */
+  .ts-override{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted);margin-bottom:14px;cursor:pointer;}
+  .ts-head-row{display:grid;grid-template-columns:1fr 70px 90px;gap:8px;padding:0 4px 4px;
+    font-family:var(--mono);font-size:9px;letter-spacing:0.06em;text-transform:uppercase;color:var(--muted-2);}
+  .ts-row{display:grid;grid-template-columns:1fr 70px 90px;gap:8px;align-items:center;
+    border:1px solid var(--line);border-radius:8px;padding:7px 9px;margin-bottom:6px;background:var(--bg);}
+  .ts-row .swab{width:12px;height:12px;border-radius:3px;flex:none;display:inline-block;margin-right:7px;
+    border:1px solid var(--line);vertical-align:middle;}
+  .ts-name{font-size:12.5px;color:var(--ink);}
+  .ts-onbar{justify-self:center;}
+  .ts-hotkey{width:100%;border:1px solid var(--line);border-radius:6px;padding:5px 6px;
+    font-family:var(--body);font-size:12px;text-align:center;text-transform:uppercase;background:#fff;color:var(--ink);}
+  .ts-hotkey:focus{outline:none;border-color:var(--accent);}
+  .ts-hotkey.dup{border-color:var(--danger);color:var(--danger);}
+
   /* auth gate: full-screen sign in / sign up / forgot / reset password */
   .auth-gate{position:fixed;inset:0;background:var(--canvas,#f4f5f8);z-index:200;display:none;
     align-items:center;justify-content:center;padding:24px;}
