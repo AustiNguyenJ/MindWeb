@@ -159,12 +159,11 @@
     font-size:10.5px;color:var(--muted);text-decoration:underline;cursor:pointer;}
   .storage-bar .sb-toggle:hover{color:var(--accent);border:none;}
 
-  details.help{margin-top:12px;border-top:1px solid var(--line);padding-top:10px;}
-  details.help summary{font-size:11.5px;color:var(--muted);cursor:pointer;list-style:none;}
-  details.help summary::-webkit-details-marker{display:none;}
-  details.help summary::before{content:'? ';}
-  .help-body{font-size:11.5px;color:var(--muted);line-height:1.75;margin-top:8px;max-height:210px;overflow-y:auto;}
-  .help-body b{color:var(--ink);}
+  .help-trigger{margin-top:12px;border:none;background:none;border-top:1px solid var(--line);
+    padding:10px 0 0;font-size:11.5px;color:var(--muted);cursor:pointer;text-align:left;width:100%;
+    font-family:var(--body);}
+  .help-trigger:hover{color:var(--accent);}
+  .help-trigger::before{content:'? ';}
   kbd{font-family:var(--mono);font-size:10px;background:var(--bg);border:1px solid var(--line);
     border-radius:4px;padding:1px 4px;color:var(--ink);}
 
@@ -475,6 +474,21 @@
     text-decoration:underline;cursor:pointer;font-family:var(--body);}
   .auth-link:hover{color:var(--accent);}
   .bd-empty{color:var(--muted);font-size:13px;text-align:center;padding:40px 20px;line-height:1.6;}
+
+  /* help modal */
+  .help-navbtn{display:block;}
+  .help-section{display:none;}
+  .help-section.active{display:block;}
+  .help-body h3{margin:0 0 10px;font-size:15px;font-weight:700;color:var(--ink);}
+  .help-body p{margin:0 0 12px;font-size:13px;line-height:1.65;color:var(--muted);}
+  .help-body p:last-child{margin-bottom:0;}
+  .help-body b{color:var(--ink);}
+  .help-body ul{margin:0 0 12px;padding-left:20px;}
+  .help-body li{margin-bottom:7px;font-size:13px;line-height:1.6;color:var(--muted);}
+  .help-body .help-code{font-family:var(--mono);font-size:11.5px;line-height:1.7;
+    background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:8px 10px;color:var(--ink);}
+  .help-hotkeys{list-style:none;padding:0;margin:0 0 12px;display:flex;flex-direction:column;gap:7px;}
+  .help-hotkeys li{display:flex;align-items:center;gap:9px;font-size:13px;color:var(--muted);}
 
   /* search modal */
   /* connection-drop node picker */

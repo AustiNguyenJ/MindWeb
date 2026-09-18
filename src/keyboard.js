@@ -19,6 +19,7 @@ import { createConnection, deleteConnection } from "./connections.js";
 import { renderBoard } from "./render.js";
 import { undo, redo } from "./history.js";
 import { toggleSearch, closeSearch } from "./search.js";
+import { closeHelp } from "./help.js";
 import { closePageMenu } from "./pageMenu.js";
 import { cleanupConnectVisuals, fromItemLabel } from "./canvas.js";
 import { queueBoardSave } from "./storage.js";
@@ -95,6 +96,13 @@ export function initKeyboard(){
     if(e.key==="Escape" && el("confirmOverlay").classList.contains("open")){
       e.preventDefault();
       cancelConfirmModal();
+      return;
+    }
+
+    // Escape closes the help modal the same way
+    if(e.key==="Escape" && el("helpOverlay").classList.contains("open")){
+      e.preventDefault();
+      closeHelp();
       return;
     }
 

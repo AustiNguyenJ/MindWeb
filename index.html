@@ -56,98 +56,7 @@
         <button id="cloudAccountBtn">Account</button>
       </div>
     </div>
-    <details class="help">
-      <summary>Shortcuts &amp; tips</summary>
-      <div class="help-body">
-        <b>Notebooks &amp; pages</b><br>
-        Pages live inside notebooks, like OneNote. Click a notebook to
-        collapse it, the <b>+</b> on its row to add a page, the pencil to
-        rename, the <b>×</b> to delete. <b>+ Notebook</b> adds a new one.<br>
-        <b>Reorder</b> pages by dragging them up or down; drag onto another
-        notebook to move them there. Right-click a page (or use its <b>⋯</b>
-        button) to <b>pin</b> it to the top, rename, <b>duplicate the whole
-        page</b>, or delete. Pinned pages show a star and can still be reordered
-        among themselves.<br>
-        <b>Favorites</b> — pinned pages also collect in a Favorites strip at
-        the top of the sidebar, pulling together starred pages from every
-        notebook for quick access. It only appears once you've pinned something,
-        and collapses to a single row if you want it out of the way.<br><br>
-        <b>Copy between pages</b><br>
-        Select blocks, <kbd>Ctrl</kbd>+<kbd>C</kbd>, switch to any page, then
-        <kbd>Ctrl</kbd>+<kbd>V</kbd> — the blocks and the connections between
-        them come along.<br><br>
-        <b>Search</b><br>
-        <kbd>⇧F</kbd> (Shift+F) or the Search button opens the search box
-        as a pop-up, so your notebooks stay visible underneath. Narrow it with
-        the scope chips — all notebooks, the current notebook, or just this
-        page. Matches are highlighted; <kbd>Enter</kbd> jumps to the top hit,
-        <kbd>Esc</kbd> closes.<br><br>
-        <b>Custom blocks</b><br>
-        <b>Design blocks</b> in the toolbar opens the designer. The built-in
-        Note, Question, and Ticket blocks are listed there and can be edited
-        like any other &mdash; add fields, rename them, change placeholders.
-        Build your own types too, with any mix of fields &mdash; short text,
-        long text, formatted text, links, numbers, dates, dropdowns, checkboxes
-        &mdash; pick a header colour and width, and drag fields to reorder. A
-        live preview updates as you go. List and Week have special repeating
-        rows, so they're shown locked.<br><br>
-        <b>Repeating rows</b> — set a field's type to “Repeating rows”
-        to get an appendable group, like steps + description. Define the columns
-        each row should have, choose whether they sit <b>stacked</b> or
-        <b>side by side</b>, and drag the column handles to reorder them. On the
-        block you click <b>+</b> to add as many rows as you like. Every row gets
-        its own connection dot, so you can branch off any single step. Saved
-        types travel with your Export file.<br><br>
-        <b>Spawn at cursor</b><br>
-        <kbd>H</kbd> header &middot; <kbd>N</kbd> note &middot; <kbd>L</kbd> list &middot; <kbd>Q</kbd> question<br>
-        <kbd>T</kbd> ticket &middot; <kbd>W</kbd> week &middot; <kbd>G</kbd> image<br><br>
-        <b>Tickets</b><br>
-        A <b>ticket</b> box holds a number, link, assignee, customer, and note.
-        A <b>week</b> box groups a whole week's tickets with a shared notes area
-        &mdash; each ticket row has its own dot, so you can branch detail off any
-        one of them. The week label fills in with the current Mon–Sun range.
-        Click <b>↗</b> to open a ticket's link.<br><br>
-        <b>Copying</b><br>
-        Every field has a <b>⧉</b> button. On a ticket box, <b>Copy all</b>
-        grabs the whole record; in a week box the ⧉ beside the customer
-        copies that one ticket, and the ⧉ in the header copies the whole
-        week. The formatting bar has one too, for the note text.<br><br>
-        <b>Formatting</b><br>
-        Select a box to reveal its formatting bar: bold, italic, bullet and
-        numbered lists, and links. Pasting a bare URL turns it into a link
-        automatically. <kbd>Ctrl</kbd>+click any link to open it.<br><br>
-        <b>Connecting</b><br>
-        Drag the dot on a box's edge onto another box.<br>
-        Drop on <b>empty canvas</b> to open a picker — type to filter, <kbd>Enter</kbd>
-        picks the top match, and the new box appears already connected.<br>
-        Each <b>list item</b> has its own dot, so you can branch a hierarchy off any line.<br>
-        Double-click a line to label it.<br><br>
-        <b>Canvas</b><br>
-        <b>Left-drag</b> empty space to pan<br>
-        <b>Right-drag</b> anywhere to rubber-band select<br>
-        <b>Mouse wheel</b> to zoom<br>
-        <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo &middot; <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> redo<br>
-        <kbd>Ctrl</kbd>+<kbd>A</kbd> select all<br>
-        Drag any selected box to move the whole group<br>
-        <kbd>Ctrl</kbd>/<kbd>Shift</kbd>+click to add or remove from a selection<br>
-        <kbd>Del</kbd> removes everything selected<br>
-        <kbd>Ctrl</kbd>+<kbd>C</kbd> / <kbd>V</kbd> copy &amp; paste boxes<br>
-        Paste an image anywhere to drop it on the canvas<br><br>
-        <b>Collapsing</b><br>
-        Any box with arrows leading out of it gets a chevron at its head.
-        Click it to fold everything downstream out of sight; the box shows how
-        many are hidden. Click again to bring them back.<br><br>
-        <b>Colours</b><br>
-        Boxes start white. Click a box to reveal its swatches; with several
-        selected, a swatch recolours all of them at once.<br><br>
-        <b>Saving</b><br>
-        Pick a folder once with <b>Connect folder</b>. This page then creates
-        <b>saved-boards/</b> inside it and writes:<br>
-        <span style="font-family:var(--mono);font-size:10px;">saved-boards/index.json<br>saved-boards/board-&lt;id&gt;.json</span><br>
-        One file per page, rewritten on every change. Needs Chrome or Edge.
-        <b>Export</b> gives you a single backup file that works anywhere.
-      </div>
-    </details>
+    <button class="help-trigger" id="helpTriggerBtn">Shortcuts &amp; tips</button>
   </aside>
 
   <div id="main">
@@ -271,6 +180,23 @@
     <div class="bd-foot">
       <div class="spacer"></div>
       <button class="bd-btn" id="tsDone">Done</button>
+    </div>
+  </div>
+</div>
+
+<div class="bd-overlay" id="helpOverlay">
+  <div class="bd-modal">
+    <div class="bd-head">
+      <h2>Shortcuts &amp; tips</h2>
+      <button class="bd-close" id="helpClose">&times;</button>
+    </div>
+    <div class="bd-body">
+      <div class="bd-left" id="helpSectionList"></div>
+      <div class="bd-right help-body" id="helpBody"></div>
+    </div>
+    <div class="bd-foot">
+      <div class="spacer"></div>
+      <button class="bd-btn" id="helpDone">Done</button>
     </div>
   </div>
 </div>
