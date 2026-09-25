@@ -45,6 +45,7 @@ import { initToolbar } from "./toolbar.js";
 import { initKeyboard } from "./keyboard.js";
 import { initDesigner, renderTypeToolbar } from "./designer.js";
 import { initHelp } from "./help.js";
+import { initTheme } from "./theme.js";
 import { initAuthGate, requireCloudAuth } from "./cloud.js";
 import { initConfirmModal } from "./confirmModal.js";
 
@@ -135,6 +136,7 @@ window.addEventListener("beforeunload",(e)=>{
   initConfirmModal();
   initToolbarSettings();
   initHelp();
+  initTheme();
   initAuthGate();
 
   // when Supabase is configured, block here until someone is signed in --

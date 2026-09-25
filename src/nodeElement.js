@@ -7,6 +7,7 @@ import {
   richToText,
   normalizeUrl,
   openLinkBackground,
+  themedNodeColor,
 } from "./util.js";
 import { canvasInner, imgFileInput } from "./dom.js";
 import { copyText } from "./clipboard.js";
@@ -55,7 +56,7 @@ export function nodeElement(node){
   div.dataset.id = node.id;
   div.style.left = node.x+"px"; div.style.top = node.y+"px"; div.style.width = node.w+"px";
   if(node.type!=="list" && node.type!=="ticket" && node.type!=="week" && !isCustomType(node.type)) div.style.height = node.h+"px";
-  if(node.type!=="header" && node.type!=="image") div.style.background = node.color || "#fff";
+  if(node.type!=="header" && node.type!=="image") div.style.background = themedNodeColor(node.color);
 
   let bodyHtml = "";
   if(node.type==="image"){
@@ -106,7 +107,7 @@ export function nodeElement(node){
   }
 
   const colorRow = (node.type!=="image" && node.type!=="header")
-    ? '<div class="color-row">'+COLORS.map(c=>'<button class="swatch '+(node.color===c?'active':'')+'" data-color="'+c+'" style="background:'+c+'"></button>').join('')+'</div>'
+    ? '<div class="color-row">'+COLORS.map(c=>'<button class="swatch '+(node.color===c?'active':'')+'" data-color="'+c+'" style="background:'+themedNodeColor(c)+'"></button>').join('')+'</div>'
     : '';
 
   const defForBar = state.customTypes[node.type];
@@ -405,7 +406,7 @@ export function nodeElement(node){
         n.color = color;
         const nel = canvasInner.querySelector('.node[data-id="'+id+'"]');
         if(nel && n.type!=="header" && n.type!=="image"){
-          nel.style.background = color;
+          nel.style.background = themedNodeColor(color);
           nel.querySelectorAll(".swatch").forEach(s=>s.classList.toggle("active", s.dataset.color===color));
         }
       });

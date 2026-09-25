@@ -1,6 +1,6 @@
 import { el } from "./dom.js";
 import { state } from "./state.js";
-import { escapeHtml, escapeAttr, uid } from "./util.js";
+import { escapeHtml, escapeAttr, uid, themedNodeColor } from "./util.js";
 import { showToast } from "./toast.js";
 import { TYPE_ACCENTS, FIELD_KINDS, SUBFIELD_KINDS, PROTECTED_BUILTINS } from "./constants.js";
 import { getData } from "./boards.js";
@@ -163,7 +163,7 @@ export function renderEditor(){
     '<div class="bd-field-grp"><label>Block name</label>' +
       '<input type="text" id="bdName" value="'+escapeAttr(t.name)+'" placeholder="e.g. Incident, Server, Contact"></div>' +
     '<div class="bd-field-grp"><label>Header colour</label>' +
-      '<div class="bd-color-picks">'+TYPE_ACCENTS.map(c=>'<button data-accent="'+c+'" class="'+(t.accent===c?"active":"")+'" style="background:'+c+'"></button>').join('')+'</div></div>' +
+      '<div class="bd-color-picks">'+TYPE_ACCENTS.map(c=>'<button data-accent="'+c+'" class="'+(t.accent===c?"active":"")+'" style="background:'+themedNodeColor(c)+'"></button>').join('')+'</div></div>' +
     '<div class="bd-field-grp"><label>Default width ('+ (t.width||240) +'px)</label>' +
       '<input type="range" id="bdWidth" min="180" max="420" step="10" value="'+(t.width||240)+'" style="width:100%"></div>' +
     '<div class="bd-fields-label"><span>Fields</span></div>' +
@@ -355,7 +355,7 @@ export function renderPreview(){
   // build a standalone preview node (not on canvas)
   const div = document.createElement("div");
   div.className = "node type-custom";
-  div.style.position="relative"; div.style.width=(t.width||240)+"px"; div.style.background=t.accent||"#fff";
+  div.style.position="relative"; div.style.width=(t.width||240)+"px"; div.style.background=themedNodeColor(t.accent);
   div.style.border="1.5px solid var(--line)"; div.style.borderRadius="10px"; div.style.boxShadow="var(--shadow)";
   div.innerHTML =
     '<div class="node-header"><span class="grip">\u2837\u2801</span>' +

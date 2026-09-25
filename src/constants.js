@@ -40,6 +40,21 @@ export const APP_KEY_LIMIT = 5 * 1024 * 1024;
 export const BUILTIN_KEYS = { bodyHtml:1, ticketNo:1, link:1, assigned:1, customer:1 };
 export const HISTORY_LIMIT = 60;
 export const TYPE_ACCENTS = ["#ffffff","#fde68a","#bfdbfe","#bbf7d0","#fecaca","#e9d5ff","#fed7aa","#c7d2fe"];
+/* Node fill colours are stored as light pastel hex values chosen from COLORS /
+   TYPE_ACCENTS above -- picked once and kept in board data, not tied to the
+   theme. In dark mode they're swapped for these deeper counterparts so node
+   text (which follows --ink) stays readable; see themedNodeColor() in
+   util.js, the single place that applies this map. */
+export const COLOR_DARK_MAP = {
+  "#ffffff": "var(--surface)",
+  "#fde68a": "#4a3f1a",
+  "#bfdbfe": "#1f3a56",
+  "#bbf7d0": "#1c3a2a",
+  "#fecaca": "#4a2020",
+  "#e9d5ff": "#3a2a52",
+  "#fed7aa": "#4a341c",
+  "#c7d2fe": "#262c52",
+};
 // subfields can't themselves be groups (no nesting)
 export const SUBFIELD_KINDS = ["text","richtext","link","number","date","checkbox"];
 /* Built-in types that CAN be edited in the designer are expressed as the same

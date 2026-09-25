@@ -1,10 +1,19 @@
-import { RICH_OK_TAGS, RICH_DROP_TAGS } from "./constants.js";
+import { RICH_OK_TAGS, RICH_DROP_TAGS, COLOR_DARK_MAP } from "./constants.js";
 
 /* Small, dependency-free helpers: ids, HTML escaping and sanitising, rich-text
    coercion, URL handling, and a couple of DOM predicates. Nothing here reads
    application state. */
 
 export function uid(){ return Math.random().toString(36).slice(2,10)+Date.now().toString(36).slice(-4); }
+
+/* A node's fill colour is a stored light hex (or unset, meaning the default
+   surface). Swap it for its dark-mode counterpart when the theme is dark, so
+   node text -- which follows --ink -- stays readable against it. */
+export function themedNodeColor(hex){
+  if(!hex) return "var(--surface)";
+  if(document.documentElement.getAttribute("data-theme")!=="dark") return hex;
+  return COLOR_DARK_MAP[hex.toLowerCase()] || hex;
+}
 export function sanitizeHtml(html){
   const tpl = document.createElement("template");
   tpl.innerHTML = html || "";
