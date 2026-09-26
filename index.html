@@ -61,8 +61,14 @@
 
   <div id="main">
     <div id="boardHeader">
-      <input id="boardTitle" placeholder="Untitled page">
-      <textarea id="boardDesc" placeholder="Add a short description for this page..." rows="1"></textarea>
+      <div id="boardHeaderMain">
+        <input id="boardTitle" placeholder="Untitled page">
+        <textarea id="boardDesc" placeholder="Add a short description for this page..." rows="1"></textarea>
+      </div>
+      <button type="button" class="header-account" id="headerAccountBtn" title="Account &amp; storage settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c0-3.5 3.1-6 7-6s7 2.5 7 6"/></svg>
+        <span>Account &amp; Storage</span>
+      </button>
     </div>
     <div id="toolbar">
       <span id="builtinToolbarBtns" style="display:flex;gap:8px;flex-wrap:wrap;"></span>
@@ -92,7 +98,7 @@
     </div>
   </div>
  </div>
- <div class="footer-bar warn" id="footerBar" title="Account &amp; storage settings">
+ <div class="footer-bar warn" id="footerBar">
    <span class="sb-dot"></span>
    <span id="footerLabel">Checking&hellip;</span>
    <span class="footer-spacer"></span>

@@ -2,20 +2,15 @@ import { el } from "./dom.js";
 import { flushPendingSaves } from "./storage.js";
 import { openAccountModal } from "./cloud.js";
 
-/* The always-visible footer bar: a compact save/backend status plus a way
-   into the Account & Storage modal. Its label text is kept current by
-   updateStorageBar() (storage.js) -- this module only wires the two clicks. */
+/* The "Account & Storage" entry point lives top-right of the page header
+   (headerAccountBtn, in index.html's #boardHeader) -- the conventional spot
+   for account/settings access. The footer bar below it is just a compact
+   save/backend status plus a manual save button; its text is kept current
+   by updateStorageBar() (storage.js). This module wires both buttons' clicks. */
 
 export function initFooterBar(){
-  const bar = el("footerBar");
-  if(!bar) return;
-  bar.addEventListener("click", (e)=>{
-    if(e.target.closest("#footerSaveBtn")) return;
-    openAccountModal();
-  });
+  const acctBtn = el("headerAccountBtn");
+  if(acctBtn) acctBtn.addEventListener("click", openAccountModal);
   const saveBtn = el("footerSaveBtn");
-  if(saveBtn) saveBtn.addEventListener("click", (e)=>{
-    e.stopPropagation();
-    flushPendingSaves();
-  });
+  if(saveBtn) saveBtn.addEventListener("click", flushPendingSaves);
 }
