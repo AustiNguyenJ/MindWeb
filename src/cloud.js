@@ -10,6 +10,7 @@ import { migrateNode } from "./nodes.js";
 import { renderBoard } from "./render.js";
 import { renderBoardList, renderBoardHeader } from "./sidebar.js";
 import { renderTypeToolbar } from "./designer.js";
+import { normalizeToolbarConfig } from "./toolbarConfig.js";
 
 /* Supabase: client construction, the email magic-link sign-in flow, the
    sidebar's cloud status bar, and the cloud storage backend.
@@ -454,6 +455,18 @@ async function cloudReadAll(){
     state.customTypes[r.id] = { id:r.id, name:r.name, accent:r.accent, width:r.width, fields:r.fields||[], builtin:!!r.builtin };
   });
 
+  // Best-effort and kept out of the Promise.all/error check above: a user
+  // who hasn't run the user_settings migration yet (or has no saved config)
+  // should still get their notebooks and boards, just with the default
+  // toolbar instead of a saved one -- not a failed cloud load entirely.
+  try{
+    const { data: settingsRow, error: sErr } = await state.supabaseClient
+      .from("user_settings").select("toolbar_config").eq("owner_id", cloudUserId()).maybeSingle();
+    if(!sErr && settingsRow && settingsRow.toolbar_config){
+      state.toolbarConfig = normalizeToolbarConfig(settingsRow.toolbar_config);
+    }
+  }catch(err){ console.warn("[mindmap] couldn't load toolbar config from cloud", err); }
+
   state.boardsData = {};
   for(const b of state.boards){
     const [{data:nodeRows, error:nErr}, {data:connRows, error:cErr}] = await Promise.all([
@@ -563,6 +576,19 @@ export async function cloudSaveTypes(){
   if(error) console.error("[mindmap] cloud types save failed", error);
 }
 
+/* The global quick-access toolbar / hotkey config, one row per user. Needs
+   the user_settings table (see supabase/user-settings.sql) -- best-effort
+   and never thrown, same as cloudSaveTypes() above, so a user who hasn't
+   run that migration yet just keeps the default toolbar instead of this
+   failing the rest of a save or connect. */
+export async function cloudSaveToolbarConfig(){
+  const uid = cloudUserId();
+  if(!uid) return;
+  const { error } = await state.supabaseClient.from("user_settings")
+    .upsert({ owner_id:uid, toolbar_config: state.toolbarConfig });
+  if(error) console.error("[mindmap] cloud toolbar config save failed", error);
+}
+
 /* Runs once per page load, right after a session appears. Mirrors
    connectFolder()'s "read what's there, or seed it from what I have"
    shape. If a folder is already connected, that stays authoritative --
@@ -584,6 +610,7 @@ export async function connectCloud(){
     } else {
       await cloudPersistIndex();
       await cloudSaveTypes();
+      await cloudSaveToolbarConfig();
       for(const b of state.boards){ await cloudPersistBoard(b.id); }
       state.backend = "cloud";
       showToast("Cloud connected \u2014 synced your current boards");

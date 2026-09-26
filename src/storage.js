@@ -9,6 +9,7 @@ import {
   cloudPersistDeleteBoard,
   cloudPersistDeleteNotebook,
   cloudSaveTypes,
+  cloudSaveToolbarConfig,
 } from "./cloud.js";
 import { recordChange } from "./history.js";
 import { centerView } from "./view.js";
@@ -256,12 +257,12 @@ export async function saveTypesNow(){
 
 export function queueTypesSave(){ clearTimeout(state.saveTimers.__types); state.saveTimers.__types = setTimeout(saveTypesNow, 400); }
 
-/* The global quick-access toolbar / hotkey config. Cloud sync is parked
-   (see README "Cloud sync status"), so this only persists for folder/app
-   backends, matching how the rest of this file degrades for cloud. */
+/* The global quick-access toolbar / hotkey config: which blocks are
+   assigned/unassigned to the bar, and their hotkeys. */
 export async function saveToolbarConfigNow(){
   try{
     if(state.backend==="folder"){ await fsWrite("toolbar-config.json", JSON.stringify(state.toolbarConfig,null,2)); }
+    else if(state.backend==="cloud"){ await cloudSaveToolbarConfig(); }
     else if(state.backend==="app"){ await window.storage.set(TOOLBAR_KEY, JSON.stringify(state.toolbarConfig), false); }
   }catch(err){ console.error("toolbar config save", err); }
 }
