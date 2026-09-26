@@ -117,9 +117,9 @@ if(authUrlError) clearAuthUrlParams();
    settings is what makes sign-up a one-time email-verification step rather
    than an instant login.
 
-   The sidebar's cloudBar, once signed in, only shows status plus a way
-   into the account settings modal (change password / sign out) -- it no
-   longer hosts a form of its own. */
+   Once signed in, the footer bar's status label covers the "am I saving"
+   question; the Account & Storage modal it opens into is where change
+   password / sign out live -- see openAccountModal() below. */
 let cloudConnectAttempted = false;   // guards against connecting twice per page load
 let authMode = "signin";             // signin | signup | forgot | sent | reset
 let authSentMessage = "";            // shown in "sent" mode
@@ -285,30 +285,45 @@ async function doResetPassword(password, password2){
   resolveAuthGate();
 }
 
-/* ---------- Account settings modal (change password / sign out) -------- */
+/* ---------- Account & Storage modal --------------------------------------
+   One settings modal reached from the footer bar: always has the storage
+   panel (backend status, connect folder, export/import); the account
+   section (email, change password, sign out) only shows up when Supabase
+   is actually configured, since there's nothing to sign in/out of otherwise. */
 export function initAuthGate(){
   const form = el("authForm");
   if(form) form.addEventListener("submit", onAuthSubmit);
 
-  const acctBtn = el("cloudAccountBtn");
-  if(acctBtn) acctBtn.addEventListener("click", openAccountModal);
   const acctClose = el("acctClose");
   if(acctClose) acctClose.addEventListener("click", closeAccountModal);
+  const acctDone = el("acctDoneBtn");
+  if(acctDone) acctDone.addEventListener("click", closeAccountModal);
   const acctOverlay = el("acctOverlay");
   if(acctOverlay) acctOverlay.addEventListener("click", (e)=>{ if(e.target===acctOverlay) closeAccountModal(); });
   const acctSave = el("acctSaveBtn");
   if(acctSave) acctSave.addEventListener("click", saveAccountPassword);
   const acctSignOut = el("acctSignOutBtn");
   if(acctSignOut) acctSignOut.addEventListener("click", async ()=>{ await state.supabaseClient.auth.signOut(); });
+
+  const reloadBtn = el("cloudLoadReloadBtn");
+  if(reloadBtn) reloadBtn.addEventListener("click", ()=>window.location.reload());
 }
 
-function openAccountModal(){
+export function openAccountModal(){
   const overlay = el("acctOverlay");
   if(!overlay) return;
-  el("acctEmail").value = (state.supabaseSession && state.supabaseSession.user) ? state.supabaseSession.user.email : "";
-  el("acctNewPassword").value = "";
-  el("acctConfirmPassword").value = "";
-  el("acctError").textContent = "";
+  const cloudSection = el("acctCloudSection");
+  const signedIn = !!(state.supabaseClient && state.supabaseSession);
+  if(cloudSection) cloudSection.style.display = signedIn ? "" : "none";
+  el("acctSignOutBtn").style.display = signedIn ? "" : "none";
+  el("acctSaveBtn").style.display = signedIn ? "" : "none";
+  if(signedIn){
+    el("acctEmail").value = state.supabaseSession.user.email;
+    el("acctNewPassword").value = "";
+    el("acctConfirmPassword").value = "";
+    el("acctError").textContent = "";
+  }
+  updateStorageBar();
   overlay.classList.add("open");
 }
 function closeAccountModal(){
@@ -332,21 +347,47 @@ async function saveAccountPassword(){
   closeAccountModal();
 }
 
-export function updateCloudBar(){
-  const bar = el("cloudBar");
-  if(!bar) return;
-  if(!state.supabaseClient || !state.supabaseSession){ bar.style.display = "none"; return; }
-  bar.style.display = "";
-  bar.className = "storage-bar ok";
-  el("cloudLabel").textContent = "Signed in";
-  el("cloudSub").textContent = state.supabaseSession.user.email;
+/* ---------- Cloud-data loading gate ---------------------------------------
+   Separate from the sign-in gate above: once someone is signed in, main.js
+   still has to wait for connectCloud() to actually fetch notebooks before
+   it's safe to render or fall back to a local backend (see waitForCloudData
+   below). cloudConnectSettled tracks that outcome (found data, seeded fresh,
+   or failed) independently of whether anyone's called waitForCloudData()
+   yet, since connectCloud() can be triggered by an auth event before main.js
+   reaches the point where it awaits this. */
+let cloudConnectSettled = false;
+let cloudConnectPromise = null;
+let cloudConnectResolve = null;
+
+function markCloudConnectSettled(){
+  cloudConnectSettled = true;
+  if(cloudConnectResolve){ cloudConnectResolve(); cloudConnectResolve = null; }
+}
+
+function showCloudLoadGate(){ const g = el("cloudLoadGate"); if(g) g.classList.add("open"); }
+function hideCloudLoadGate(){ const g = el("cloudLoadGate"); if(g) g.classList.remove("open"); }
+
+/* main.js awaits this right before deciding what to load. Resolves
+   immediately if Supabase isn't configured, or if connectCloud() already
+   settled by the time this is called; otherwise shows a loading screen
+   (with a "this is slow" message after 8s -- no offline fallback, since
+   every RLS policy requires a real session) until it does. */
+export function waitForCloudData(){
+  if(!state.supabaseClient || cloudConnectSettled) return Promise.resolve();
+  showCloudLoadGate();
+  const slowTimer = setTimeout(()=>{
+    const s = el("cloudLoadSlow"); if(s) s.style.display = "block";
+  }, 8000);
+  if(!cloudConnectPromise) cloudConnectPromise = new Promise(res=>{ cloudConnectResolve = res; });
+  return cloudConnectPromise.then(()=>{
+    clearTimeout(slowTimer);
+    hideCloudLoadGate();
+  });
 }
 
 if(state.supabaseClient){
-  updateCloudBar();
   state.supabaseClient.auth.getSession().then(({data})=>{
     state.supabaseSession = data.session;
-    updateCloudBar();
     if(state.supabaseSession){
       resolveAuthGate();
       connectCloud();
@@ -357,7 +398,6 @@ if(state.supabaseClient){
   });
   state.supabaseClient.auth.onAuthStateChange((event, session)=>{
     state.supabaseSession = session;
-    updateCloudBar();
     if(event==="PASSWORD_RECOVERY"){
       // the recovery link signs the visitor in on the spot -- force the
       // reset-password form instead of treating this as a normal sign-in
@@ -532,6 +572,7 @@ export async function connectCloud(){
   cloudConnectAttempted = true;
   if(state.backend==="folder"){
     showToast("Signed in \u2014 still saving to your folder");
+    markCloudConnectSettled();
     return;
   }
   try{
@@ -549,9 +590,11 @@ export async function connectCloud(){
     }
     renderBoardList(); renderBoardHeader(); centerView(); renderBoard();
     renderTypeToolbar(); historyReset(state.currentBoardId); updateStorageBar();
+    markCloudConnectSettled();
   }catch(err){
     console.error("[mindmap] cloud connect failed", err);
     showToast("Couldn't connect to cloud \u2014 see console");
     cloudConnectAttempted = false;   // allow a retry on next sign-in event
+    markCloudConnectSettled();
   }
 }

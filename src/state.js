@@ -39,6 +39,8 @@ export const state = {
   rootHandle: null,           // folder the user picked
   dirHandle: null,            // <root>/saved-boards
   saveTimers: {},
+  saveStatus: "idle",         // idle | pending | error -- drives the footer bar
+  lastSavedAt: null,          // Date.now() of the last successful save, any kind
 
   /* Boards whose stored payload existed but could not be parsed. They are
      never written back, so a damaged file is not replaced by an empty one. */

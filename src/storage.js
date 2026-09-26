@@ -214,7 +214,12 @@ export async function persistBoard(id){
       await window.storage.set("mindmap:board:"+id, payload, false); showToast("Saved");
     }
     else { showToast("Not saving \u2014 connect a folder"); }
-  }catch(err){ console.error("board save", err); showToast("Save failed \u2014 see console"); }
+    clearTimeout(state.saveTimers["__max_"+id]); delete state.saveTimers["__max_"+id];
+    state.saveStatus = "idle"; state.lastSavedAt = Date.now(); updateStorageBar();
+  }catch(err){
+    console.error("board save", err); showToast("Save failed \u2014 see console");
+    state.saveStatus = "error"; updateStorageBar();
+  }
 }
 
 export async function persistDeleteBoard(id){
@@ -280,8 +285,19 @@ export function queueBoardSave(id){
     if(ok){ state.corruptBoards.delete(id); }
     else { return; }
   }
+  state.saveStatus = "pending";
+  updateStorageBar();
   clearTimeout(state.saveTimers[id]);
-  state.saveTimers[id] = setTimeout(()=>saveBoardNow(id), 500);
+  // Cloud writes hit a real database on every call, so a debounce this short
+  // would fire on close to every keystroke -- stretch it out for that backend
+  // specifically. A steady stream of edits would otherwise keep pushing the
+  // debounce back forever, so a separate, un-reset timer forces a flush after
+  // a bounded wait regardless of how much typing is still happening.
+  const delay = state.backend==="cloud" ? 4000 : 500;
+  state.saveTimers[id] = setTimeout(()=>saveBoardNow(id), delay);
+  if(state.backend==="cloud" && !state.saveTimers["__max_"+id]){
+    state.saveTimers["__max_"+id] = setTimeout(()=>saveBoardNow(id), 15000);
+  }
 }
 
 export async function openSavedBoardsDir(handle){
@@ -360,25 +376,65 @@ export async function restoreFolderHandle(){
   }catch(e){ return false; }
 }
 
-export function updateStorageBar(){
-  const bar = el("storageBar");
-  if(!bar) return;
-  let cls, label, sub;
+/* Backend-only status (what/where we're saving to), independent of whether
+   a save is currently pending -- used for both the storage panel inside the
+   account modal and as the base state for the footer bar below. */
+function backendStatus(){
   if(state.backend==="folder"){
-    cls="ok"; label="Saving to folder";
-    sub=(state.rootHandle && state.rootHandle.name ? state.rootHandle.name+"/" : "")+"saved-boards/";
-  } else if(state.backend==="cloud"){
-    cls="ok"; label="Saving to cloud";
-    sub=(state.supabaseSession && state.supabaseSession.user) ? state.supabaseSession.user.email : "Supabase";
-  } else if(state.backend==="app"){
-    cls="ok"; label="Saving in this browser";
-    sub="Connect a folder to save real files";
-  } else {
-    cls="warn"; label="Not saving yet";
-    sub="Connect a folder to keep your work";
+    return { cls:"ok", label:"Saving to folder",
+      sub:(state.rootHandle && state.rootHandle.name ? state.rootHandle.name+"/" : "")+"saved-boards/" };
   }
-  bar.className = "storage-bar "+cls;
-  bar.querySelector(".sb-label").textContent = label;
-  bar.querySelector(".sb-sub").textContent = sub;
-  el("connectFolderBtn").textContent = state.backend==="folder" ? "Change folder" : "Connect folder";
+  if(state.backend==="cloud"){
+    return { cls:"ok", label:"Saving to cloud",
+      sub:(state.supabaseSession && state.supabaseSession.user) ? state.supabaseSession.user.email : "Supabase" };
+  }
+  if(state.backend==="app"){
+    return { cls:"ok", label:"Saving in this browser", sub:"Connect a folder to save real files" };
+  }
+  return { cls:"warn", label:"Not saving yet", sub:"Connect a folder to keep your work" };
+}
+
+function formatClock(ts){
+  return new Date(ts).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"});
+}
+
+/* Refreshes both status displays: the storage panel inside the account
+   modal (unchanged wording, so existing tests/harness boot-detection that
+   read #storageBar keep working) and the always-visible footer bar, which
+   additionally folds in save-in-flight/error state that the modal doesn't
+   need to show. */
+export function updateStorageBar(){
+  const info = backendStatus();
+  const bar = el("storageBar");
+  if(bar){
+    bar.className = "storage-bar "+info.cls;
+    bar.querySelector(".sb-label").textContent = info.label;
+    bar.querySelector(".sb-sub").textContent = info.sub;
+  }
+  const cfBtn = el("connectFolderBtn");
+  if(cfBtn) cfBtn.textContent = state.backend==="folder" ? "Change folder" : "Connect folder";
+
+  const foot = el("footerBar");
+  if(!foot) return;
+  let cls = info.cls, label = info.label;
+  if(state.saveStatus==="error"){ cls="warn"; label="Save failed — see console"; }
+  else if(state.saveStatus==="pending"){ cls="warn"; label="Unsaved changes…"; }
+  foot.className = "footer-bar "+cls;
+  const lbl = el("footerLabel"); if(lbl) lbl.textContent = label;
+  const saved = el("footerSaved");
+  if(saved) saved.textContent = state.lastSavedAt ? "Last saved "+formatClock(state.lastSavedAt) : "";
+}
+
+/* Clears whatever save timers are pending for the current board/index and
+   saves right now -- the footer bar's manual "Save now" button. */
+export function flushPendingSaves(){
+  const id = state.currentBoardId;
+  if(id){
+    clearTimeout(state.saveTimers[id]);
+    clearTimeout(state.saveTimers["__max_"+id]);
+    delete state.saveTimers["__max_"+id];
+    saveBoardNow(id);
+  }
+  clearTimeout(state.saveTimers.__index);
+  saveIndexNow();
 }

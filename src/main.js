@@ -46,11 +46,18 @@ import { initKeyboard } from "./keyboard.js";
 import { initDesigner, renderTypeToolbar } from "./designer.js";
 import { initHelp } from "./help.js";
 import { initTheme } from "./theme.js";
-import { initAuthGate, requireCloudAuth } from "./cloud.js";
+import { initAuthGate, requireCloudAuth, waitForCloudData } from "./cloud.js";
 import { initConfirmModal } from "./confirmModal.js";
+import { initFooterBar } from "./footer.js";
 
 
 async function loadAll(){
+  // connectCloud() (awaited via waitForCloudData(), just before this is
+  // called) already populated boards/boardsData/notebooks/customTypes from
+  // Supabase and set the backend to "cloud" -- running the folder/app/memory
+  // logic below on top of that would overwrite it with an empty local board.
+  if(state.backend==="cloud") return;
+
   // 1. try a previously connected folder
   const gotFolder = await restoreFolderHandle();
   if(gotFolder){
@@ -138,6 +145,7 @@ window.addEventListener("beforeunload",(e)=>{
   initHelp();
   initTheme();
   initAuthGate();
+  initFooterBar();
 
   // when Supabase is configured, block here until someone is signed in --
   // the rest of boot (loading board data, first render) waits on it
@@ -149,6 +157,9 @@ window.addEventListener("beforeunload",(e)=>{
   await loadCustomTypes();
   seedBuiltinTypes();
   await loadToolbarConfig();
+  // also blocks (with its own loading screen) until connectCloud() has
+  // either found notebooks, seeded fresh ones, or given up -- see cloud.js
+  await waitForCloudData();
   await loadAll();
   reconstructMissingTypes();
   renderTypeToolbar();

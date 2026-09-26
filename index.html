@@ -21,6 +21,7 @@
 </head>
 <body>
 <div id="app">
+ <div id="appBody">
   <aside id="sidebar">
     <div class="app-title"><span class="dot"></span>Mind Map Studio
       <button class="theme-toggle" id="themeToggleBtn" title="Toggle dark mode">
@@ -55,23 +56,6 @@
       <div id="notebookTree"></div>
     </div>
     <button class="new-board-btn" id="newBoardBtn">+ New page</button>
-
-    <div class="storage-bar warn" id="storageBar">
-      <div class="sb-row"><span class="sb-dot"></span><span class="sb-label">Checking&hellip;</span></div>
-      <div class="sb-sub"></div>
-      <div class="sb-actions">
-        <button id="connectFolderBtn">Connect folder</button>
-        <button id="exportBtn">Export</button>
-        <button id="importBtn">Import</button>
-      </div>
-    </div>
-    <div class="storage-bar warn" id="cloudBar" style="display:none;margin-top:8px;">
-      <div class="sb-row"><span class="sb-dot"></span><span class="sb-label" id="cloudLabel">Not signed in</span></div>
-      <div class="sb-sub" id="cloudSub">Sign in for cloud sync</div>
-      <div class="sb-actions" id="cloudActions">
-        <button id="cloudAccountBtn">Account</button>
-      </div>
-    </div>
     <button class="help-trigger" id="helpTriggerBtn">Shortcuts &amp; tips</button>
   </aside>
 
@@ -107,6 +91,14 @@
       </div>
     </div>
   </div>
+ </div>
+ <div class="footer-bar warn" id="footerBar" title="Account &amp; storage settings">
+   <span class="sb-dot"></span>
+   <span id="footerLabel">Checking&hellip;</span>
+   <span class="footer-spacer"></span>
+   <span id="footerSaved"></span>
+   <button type="button" id="footerSaveBtn" title="Save now">Save now</button>
+ </div>
 </div>
 
 <input type="file" id="imgFileInput" accept="image/*" style="display:none">
@@ -228,24 +220,51 @@
   </form>
 </div>
 
+<div class="auth-gate" id="cloudLoadGate">
+  <div class="auth-card">
+    <div class="auth-title">Mind Map Studio</div>
+    <div class="auth-subtitle" id="cloudLoadMsg">Loading your notebooks&hellip;</div>
+    <div id="cloudLoadSlow" style="display:none;text-align:center;">
+      <div class="auth-subtitle">This is taking longer than usual. Mind Map Studio needs a connection to load your notebooks &mdash; check your network and it'll pick up automatically once it can reach the server.</div>
+      <button type="button" class="auth-submit" id="cloudLoadReloadBtn">Reload page</button>
+    </div>
+  </div>
+</div>
+
 <div class="bd-overlay" id="acctOverlay">
-  <div class="bd-modal" style="max-width:400px;">
+  <div class="bd-modal" style="max-width:420px;">
     <div class="bd-head">
-      <h2>Account</h2>
+      <h2>Account &amp; Storage</h2>
       <button class="bd-close" id="acctClose">&times;</button>
     </div>
-    <div class="bd-body" style="flex-direction:column;padding:20px;">
-      <div class="auth-fields">
-        <label>Signed in as<input id="acctEmail" disabled></label>
-        <label>New password<input id="acctNewPassword" type="password" autocomplete="new-password" placeholder="Leave blank to keep current password"></label>
-        <label>Confirm new password<input id="acctConfirmPassword" type="password" autocomplete="new-password"></label>
+    <div class="bd-body" style="flex-direction:column;padding:20px;gap:18px;">
+      <div>
+        <div class="section-label">Storage</div>
+        <div class="storage-bar warn" id="storageBar" style="margin-top:0;">
+          <div class="sb-row"><span class="sb-dot"></span><span class="sb-label">Checking&hellip;</span></div>
+          <div class="sb-sub"></div>
+          <div class="sb-actions">
+            <button id="connectFolderBtn">Connect folder</button>
+            <button id="exportBtn">Export</button>
+            <button id="importBtn">Import</button>
+          </div>
+        </div>
       </div>
-      <div class="auth-error" id="acctError"></div>
+      <div id="acctCloudSection" style="display:none;">
+        <div class="section-label">Account</div>
+        <div class="auth-fields">
+          <label>Signed in as<input id="acctEmail" disabled></label>
+          <label>New password<input id="acctNewPassword" type="password" autocomplete="new-password" placeholder="Leave blank to keep current password"></label>
+          <label>Confirm new password<input id="acctConfirmPassword" type="password" autocomplete="new-password"></label>
+        </div>
+        <div class="auth-error" id="acctError"></div>
+      </div>
     </div>
     <div class="bd-foot">
-      <button class="bd-btn" id="acctSignOutBtn">Sign out</button>
+      <button class="bd-btn" id="acctSignOutBtn" style="display:none;">Sign out</button>
       <div class="spacer"></div>
-      <button class="bd-btn primary" id="acctSaveBtn">Update password</button>
+      <button class="bd-btn primary" id="acctSaveBtn" style="display:none;">Update password</button>
+      <button class="bd-btn" id="acctDoneBtn">Done</button>
     </div>
   </div>
 </div>
