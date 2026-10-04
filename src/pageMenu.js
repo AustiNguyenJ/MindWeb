@@ -9,6 +9,7 @@ import {
   deleteBoard,
   duplicatePage,
 } from "./sidebar.js";
+import { closeNotebookMenu } from "./notebookMenu.js";
 
 /* The right-click / overflow menu on a page in the sidebar. */
 
@@ -25,6 +26,7 @@ export function pageMenuOutside(e){
 
 export function openPageMenu(pageId, x, y){
   closePageMenu();
+  closeNotebookMenu();
   const b = state.boards.find(p=>p.id===pageId);
   if(!b) return;
   const menu = document.createElement("div");

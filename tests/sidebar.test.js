@@ -15,6 +15,39 @@ const menuFor = (pageId) => {
 };
 const pageIdAt = (i) => app.$$(".board-item")[i].dataset.id;
 
+// jsdom has neither DataTransfer nor DragEvent, so drags are simulated with a
+// plain Event carrying a minimal fake dataTransfer -- enough fidelity for
+// code that only calls setData/getData/types.includes on it. One fake object
+// is reused across dragstart/dragover/drop within a single simulated drag,
+// matching how a real DataTransfer persists for the whole gesture.
+function fakeDataTransfer() {
+  const data = new Map();
+  return {
+    setData: (k, v) => data.set(k, v),
+    getData: (k) => data.get(k) ?? "",
+    types: { includes: (k) => data.has(k) },
+    effectAllowed: "", dropEffect: "",
+  };
+}
+function fireDrag(app, el, type, dt, init = {}) {
+  const e = new app.window.Event(type, { bubbles: true, cancelable: true });
+  e.dataTransfer = dt;
+  Object.assign(e, init);
+  el.dispatchEvent(e);
+  return e;
+}
+/** Drag `sourceEl` and drop it on `targetEl`. jsdom has no layout, so every
+ *  element's rect is zero -- `below: true` passes a clientY > 0 so the
+ *  app's own "below the midpoint" math lands on the lower side. */
+function simulateDrag(app, sourceEl, targetEl, { below = false } = {}) {
+  const dt = fakeDataTransfer();
+  fireDrag(app, sourceEl, "dragstart", dt);
+  fireDrag(app, targetEl, "dragover", dt, { clientY: below ? 1 : 0 });
+  fireDrag(app, targetEl, "drop", dt, { clientY: below ? 1 : 0 });
+  fireDrag(app, sourceEl, "dragend", dt);
+  return dt;
+}
+
 // the confirm modal (replacing window.confirm) needs an explicit click and a
 // tick for its promise to resolve before the delete actually happens
 const confirmDelete = async () => { app.click(app.$("#confirmOkBtn")); await tick(10); };
@@ -252,6 +285,50 @@ describe("the page context menu", () => {
   });
 });
 
+describe.skipIf(onBaseline)("the notebook context menu", () => {
+  const openNotebookMenu = () => {
+    app.$(".nb-head").dispatchEvent(
+      new app.window.MouseEvent("contextmenu", { bubbles: true, cancelable: true })
+    );
+    return app.$("#notebookMenu");
+  };
+
+  it("opens on right-click with the expected items", () => {
+    const menu = openNotebookMenu();
+    expect(menu).toBeTruthy();
+    const labels = [...menu.querySelectorAll(".pm-item")].map((b) => b.textContent);
+    expect(labels).toEqual(["New page here", "New sub-notebook here", "Rename", "Delete notebook"]);
+  });
+
+  it("deletes the notebook through the same confirm-modal flow", async () => {
+    app.click(app.$("#newNotebookBtn"));
+    app.$(".nb-name input").dispatchEvent(new app.window.Event("blur"));
+    expect(app.$$(".nb")).toHaveLength(2);
+
+    app.$$(".nb-head")[1].dispatchEvent(
+      new app.window.MouseEvent("contextmenu", { bubbles: true, cancelable: true })
+    );
+    app.click(app.$("#notebookMenu").querySelector('[data-act="del"]'));
+    expect(app.$("#confirmOverlay").classList.contains("open")).toBe(true);
+    await confirmDelete();
+
+    expect(app.$$(".nb")).toHaveLength(1);
+  });
+
+  it("closes an already-open page menu, and vice versa", () => {
+    const pageMenu = menuFor(pageIdAt(0));
+    expect(pageMenu).toBeTruthy();
+
+    const nbMenu = openNotebookMenu();
+    expect(nbMenu).toBeTruthy();
+    expect(app.$("#pageMenu")).toBeNull();
+
+    const pageMenu2 = menuFor(pageIdAt(0));
+    expect(pageMenu2).toBeTruthy();
+    expect(app.$("#notebookMenu")).toBeNull();
+  });
+});
+
 describe("pinning and favorites", () => {
   it("hides the favorites strip until something is pinned", () => {
     expect(app.$("#favWrap").style.display).toBe("none");
@@ -299,5 +376,79 @@ describe("pinning and favorites", () => {
     app.click(menuFor(pageIdAt(0)).querySelector('[data-act="pin"]'));
     app.click(app.$("#favHead"));
     expect(app.$("#favWrap").classList.contains("collapsed")).toBe(true);
+  });
+});
+
+describe.skipIf(onBaseline)("dragging a multi-selection of pages", () => {
+  it("moves the whole group into another notebook, not just the dragged page", () => {
+    app.click(app.$("#newBoardBtn"));
+    app.click(app.$("#newBoardBtn"));
+    expect(app.pages()).toHaveLength(3);
+
+    app.click(app.$("#newNotebookBtn"));
+    app.$(".nb-name input").dispatchEvent(new app.window.Event("blur"));
+    expect(app.$$(".nb")).toHaveLength(2);
+
+    const items = () => app.$$(".board-item");
+    [0, 1, 2].forEach((i) =>
+      items()[i].dispatchEvent(new app.window.MouseEvent("click", { bubbles: true, ctrlKey: true }))
+    );
+    expect(app.$$(".board-item.multi-selected")).toHaveLength(3);
+
+    const targetHead = app.$$(".nb-head")[1];
+    simulateDrag(app, items()[1], targetHead);
+
+    expect(app.$$(".nb")[1].querySelectorAll(".board-item")).toHaveLength(3);
+    expect(app.$$(".nb")[0].querySelectorAll(".board-item")).toHaveLength(0);
+  });
+
+  it("clears the multi-selection after a successful group move", () => {
+    app.click(app.$("#newBoardBtn"));
+    app.click(app.$("#newBoardBtn"));
+    app.click(app.$("#newNotebookBtn"));
+    app.$(".nb-name input").dispatchEvent(new app.window.Event("blur"));
+
+    const items = () => app.$$(".board-item");
+    [0, 1, 2].forEach((i) =>
+      items()[i].dispatchEvent(new app.window.MouseEvent("click", { bubbles: true, ctrlKey: true }))
+    );
+    simulateDrag(app, items()[1], app.$$(".nb-head")[1]);
+
+    expect(app.$$(".board-item.multi-selected")).toHaveLength(0);
+    expect(app.$("#multiSelectBar").style.display).toBe("none");
+  });
+
+  it("moves the whole set together, preserving relative order, when dropped onto another page", () => {
+    app.click(app.$("#newBoardBtn"));
+    app.click(app.$("#newBoardBtn"));
+    app.click(app.$("#newBoardBtn"));
+    const ids = app.$$(".board-item").map((x) => x.dataset.id);
+    expect(ids).toHaveLength(4);
+
+    const items = () => app.$$(".board-item");
+    [0, 1, 2].forEach((i) =>
+      items()[i].dispatchEvent(new app.window.MouseEvent("click", { bubbles: true, ctrlKey: true }))
+    );
+    expect(app.$$(".board-item.multi-selected")).toHaveLength(3);
+
+    // drag one of the selected (index 1) onto the unselected page (index 3)
+    simulateDrag(app, items()[1], items()[3], { below: true });
+
+    const after = app.$$(".board-item").map((x) => x.dataset.id);
+    expect(after).toEqual([ids[3], ids[0], ids[1], ids[2]]);
+  });
+
+  it("shows a toast instead of nesting a notebook into its own descendant", () => {
+    app.click(app.$(".nb-add-sub"));
+    app.$(".nb-name input").dispatchEvent(new app.window.Event("blur"));
+    expect(app.$$(".nb-head")).toHaveLength(2);
+
+    const parentHead = app.$$(".nb-head")[0];
+    const childHead = app.$$(".nb-head")[1];
+    simulateDrag(app, parentHead, childHead);
+
+    expect(app.$("#toast").textContent).toBe("Can't move a notebook into one of its own sub-notebooks");
+    // the nesting never happened: still two separate heads, parent unmoved
+    expect(app.$$(".nb-head")).toHaveLength(2);
   });
 });

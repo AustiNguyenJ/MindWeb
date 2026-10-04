@@ -4,6 +4,7 @@ import { uid, escapeHtml, escapeAttr } from "./util.js";
 import { showToast } from "./toast.js";
 import { getBoard, boardsInNotebook, renumberNotebook, notebooksInParent, renumberNotebooksInParent, isNotebookDescendant } from "./boards.js";
 import { openPageMenu } from "./pageMenu.js";
+import { openNotebookMenu } from "./notebookMenu.js";
 import { centerView } from "./view.js";
 import { renderBoard } from "./render.js";
 import { historyReset } from "./history.js";
@@ -48,6 +49,47 @@ function clearMultiSelect(){
   selectedBoardIds.clear();
   lastClickedBoardId = null;
   renderBoardList();
+}
+
+function sortByCurrentOrder(ids){
+  return ids.map(id=>state.boards.find(b=>b.id===id)).filter(Boolean)
+    .sort((a,b)=>a.order-b.order);
+}
+
+/* Shared by the ".nb-head" and ".nb-pages" drop zones: move one or more
+   pages into a notebook, appended after its existing pages, preserving the
+   moved pages' relative order among themselves. Returns false (no-op) if
+   every id was already in that notebook. */
+function movePagesToNotebook(ids, nbId){
+  const nb = state.notebooks.find(n=>n.id===nbId);
+  if(!nb) return false;
+  const moving = sortByCurrentOrder(ids).filter(b=>b.notebookId!==nbId);
+  if(!moving.length) return false;
+  const base = boardsInNotebook(nbId).length;
+  moving.forEach((b,i)=>{ b.notebookId = nbId; b.order = base+i; });
+  renumberNotebook(nbId);
+  nb.collapsed = false;
+  renderBoardList(); queueIndexSave();
+  return true;
+}
+
+/* Like reorderPage(), but for a whole multi-selected group dragged onto a
+   target page: the group moves as a contiguous block, in its current
+   relative order, immediately before/after the target. */
+function reorderPageGroup(ids, targetId, below){
+  const t = state.boards.find(x=>x.id===targetId);
+  if(!t) return false;
+  const moveIds = new Set(ids.filter(id=>id!==targetId));
+  if(!moveIds.size) return false;
+  const moving = sortByCurrentOrder([...moveIds]);
+  moving.forEach(b=>{ b.notebookId = t.notebookId; b.pinned = !!t.pinned; });
+  const group = boardsInNotebook(t.notebookId).filter(x=>!moveIds.has(x.id));
+  let idx = group.findIndex(x=>x.id===targetId);
+  if(below) idx += 1;
+  group.splice(idx, 0, ...moving);
+  group.forEach((x,i)=>{ x.order = i; });
+  renderBoardList(); queueIndexSave();
+  return true;
 }
 
 /* ---------- sidebar ---------- */
@@ -148,6 +190,7 @@ export function renderBoardList(){
       head.closest(".nb").classList.remove("dragging");
       clearDropMarks();
     });
+    head.addEventListener("contextmenu",(e)=>{ e.preventDefault(); e.stopPropagation(); openNotebookMenu(nbId, e.clientX, e.clientY); });
     // dragging a notebook over another's header: top/bottom edge reorders
     // as a sibling, the middle band nests it inside. Dragging a page here
     // keeps the existing "move this page into the notebook" behavior.
@@ -182,15 +225,11 @@ export function renderBoardList(){
         else nestNotebook(draggedNbId, nbId);
         return;
       }
-      const pageId = e.dataTransfer.getData("text/plain");
-      const b = state.boards.find(x=>x.id===pageId);
-      if(b && nbId && b.notebookId!==nbId){
-        b.notebookId = nbId;
-        b.order = boardsInNotebook(nbId).length;   // drop at the end of the target notebook
-        renumberNotebook(nbId);
-        const nb = state.notebooks.find(n=>n.id===nbId);
-        if(nb) nb.collapsed = false;
-        renderBoardList(); queueIndexSave();
+      const groupRaw = e.dataTransfer.getData("application/x-page-ids");
+      const ids = groupRaw ? JSON.parse(groupRaw) : [e.dataTransfer.getData("text/plain")];
+      if(movePagesToNotebook(ids, nbId) && groupRaw){
+        selectedBoardIds.clear(); lastClickedBoardId = null;
+        renderBoardList();
       }
     });
   });
@@ -239,11 +278,20 @@ export function renderBoardList(){
     item.addEventListener("dblclick",(e)=>{ if(!e.target.closest(".board-menu-btn")) startRenameBoard(item.dataset.id, item); });
     item.addEventListener("contextmenu",(e)=>{ e.preventDefault(); openPageMenu(item.dataset.id, e.clientX, e.clientY); });
     item.addEventListener("dragstart",(e)=>{
-      item.classList.add("dragging");
-      e.dataTransfer.setData("text/plain", item.dataset.id);
+      const id = item.dataset.id;
+      if(selectedBoardIds.has(id) && selectedBoardIds.size>1){
+        e.dataTransfer.setData("application/x-page-ids", JSON.stringify([...selectedBoardIds]));
+        host.querySelectorAll(".board-item").forEach(x=>{ if(selectedBoardIds.has(x.dataset.id)) x.classList.add("dragging"); });
+      } else {
+        item.classList.add("dragging");
+      }
+      e.dataTransfer.setData("text/plain", id);
       e.dataTransfer.effectAllowed="move";
     });
-    item.addEventListener("dragend",()=>{ item.classList.remove("dragging"); clearDropMarks(); });
+    item.addEventListener("dragend",()=>{
+      host.querySelectorAll(".board-item.dragging").forEach(x=>x.classList.remove("dragging"));
+      clearDropMarks();
+    });
     // reordering: dropping ONTO another page inserts relative to it
     item.addEventListener("dragover",(e)=>{
       e.preventDefault(); e.stopPropagation();
@@ -258,8 +306,7 @@ export function renderBoardList(){
       e.preventDefault(); e.stopPropagation();
       const below = item.classList.contains("drop-below");
       clearDropMarks();
-      const pageId = e.dataTransfer.getData("text/plain");
-      reorderPage(pageId, item.dataset.id, below);
+      reorderPage(e, item.dataset.id, below);
     });
   });
   host.querySelectorAll(".board-menu-btn").forEach(btn=>{
@@ -283,16 +330,12 @@ export function renderBoardList(){
     zone.addEventListener("drop",(e)=>{
       e.preventDefault();
       zone.closest(".nb").querySelector(".nb-head").classList.remove("drop-into");
-      const pageId = e.dataTransfer.getData("text/plain");
+      const groupRaw = e.dataTransfer.getData("application/x-page-ids");
+      const ids = groupRaw ? JSON.parse(groupRaw) : [e.dataTransfer.getData("text/plain")];
       const nbId = zone.dataset.nb;
-      const b = state.boards.find(x=>x.id===pageId);
-      if(b && nbId && b.notebookId!==nbId){
-        b.notebookId = nbId;
-        b.order = boardsInNotebook(nbId).length;   // drop at the end of the target notebook
-        renumberNotebook(nbId);
-        const nb = state.notebooks.find(n=>n.id===nbId);
-        if(nb) nb.collapsed = false;
-        renderBoardList(); queueIndexSave();
+      if(movePagesToNotebook(ids, nbId) && groupRaw){
+        selectedBoardIds.clear(); lastClickedBoardId = null;
+        renderBoardList();
       }
     });
   });
@@ -312,7 +355,14 @@ export function clearDropMarks(){
 /* Move a page next to a target page. If they're in different notebooks the
    dragged page joins the target's notebook. Pinned status follows the target
    so you can reorder within the pinned group or the unpinned group. */
-export function reorderPage(pageId, targetId, below){
+export function reorderPage(e, targetId, below){
+  const groupRaw = e.dataTransfer.getData("application/x-page-ids");
+  if(groupRaw && reorderPageGroup(JSON.parse(groupRaw), targetId, below)){
+    selectedBoardIds.clear(); lastClickedBoardId = null;
+    renderBoardList();
+    return;
+  }
+  const pageId = e.dataTransfer.getData("text/plain");
   if(pageId===targetId) return;
   const b = state.boards.find(x=>x.id===pageId);
   const t = state.boards.find(x=>x.id===targetId);
@@ -337,7 +387,7 @@ export function reorderNotebook(draggedId, targetId, below){
   const d = state.notebooks.find(n=>n.id===draggedId);
   const t = state.notebooks.find(n=>n.id===targetId);
   if(!d || !t) return;
-  if(isNotebookDescendant(draggedId, targetId)) return;
+  if(isNotebookDescendant(draggedId, targetId)){ showToast("Can't move a notebook into one of its own sub-notebooks"); return; }
   d.parentId = t.parentId;
   const group = notebooksInParent(t.parentId).filter(x=>x.id!==draggedId);
   let idx = group.findIndex(x=>x.id===targetId);
@@ -352,7 +402,7 @@ export function nestNotebook(draggedId, targetId){
   if(draggedId===targetId) return;
   const d = state.notebooks.find(n=>n.id===draggedId);
   if(!d) return;
-  if(isNotebookDescendant(draggedId, targetId)) return;
+  if(isNotebookDescendant(draggedId, targetId)){ showToast("Can't move a notebook into one of its own sub-notebooks"); return; }
   d.parentId = targetId;
   renumberNotebooksInParent(targetId);
   const t = state.notebooks.find(n=>n.id===targetId);
