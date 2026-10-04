@@ -13,8 +13,16 @@ beforeEach(async () => { app = await createApp(); });
 
 describe.skipIf(onBaseline)("markup renders real characters, not escape sequences", () => {
   it("leaves no literal \\uXXXX anywhere in the rendered page", () => {
-    const text = app.document.body.textContent;
-    expect(text).not.toMatch(/\\u[0-9a-fA-F]{4}/);
+    // body.textContent includes <script> text too -- harmless for the
+    // module entry (an external src, no inline text) but the built
+    // single-file artifact inlines its whole bundle as one <script>, and a
+    // dependency's source is fair game to contain a genuine \uXXXX string
+    // literal (e.g. rangy's own selection-marker character) that was never
+    // going to render as visible text in the first place. Strip script/style
+    // before reading text, matching what this check actually cares about.
+    const clone = app.document.body.cloneNode(true);
+    clone.querySelectorAll("script, style").forEach((el) => el.remove());
+    expect(clone.textContent).not.toMatch(/\\u[0-9a-fA-F]{4}/);
   });
 
   it("shows the search shortcut as ⇧F", () => {

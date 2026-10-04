@@ -1,8 +1,13 @@
+import rangy from "rangy";
+import "rangy/lib/rangy-selectionsaverestore";
 import { RICH_OK_TAGS, RICH_DROP_TAGS, RICH_STYLE_PROPS, FONT_SIZES, HIGHLIGHT_COLOR, COLOR_DARK_MAP } from "./constants.js";
 
-/* Small, dependency-free helpers: ids, HTML escaping and sanitising, rich-text
-   coercion, URL handling, and a couple of DOM predicates. Nothing here reads
-   application state. */
+/* Small helpers: ids, HTML escaping and sanitising, rich-text coercion, URL
+   handling, and a couple of DOM predicates. Nothing here reads application
+   state. The one dependency, rangy, exists solely so a selection survives
+   the DOM surgery applyInlineStyleToSelection() does -- see the comment
+   there for why that's not something worth hand-rolling. */
+rangy.init();
 
 export function uid(){ return Math.random().toString(36).slice(2,10)+Date.now().toString(36).slice(-4); }
 
@@ -100,50 +105,64 @@ function unwrapBareSpans(root){
     }
   });
 }
-function reselectNodes(sel, nodes){
-  if(!nodes.length) return;
-  const r = document.createRange();
-  r.setStartBefore(nodes[0]);
-  r.setEndAfter(nodes[nodes.length-1]);
-  sel.removeAllRanges();
-  sel.addRange(r);
-}
 /* Apply (or, when value is falsy, clear) one inline style property across the
    current selection inside `target`. This is how the font-size and highlight
    controls work -- execCommand has no reliable cross-browser command for
    either, so they wrap/unwrap a <span style="..."> by hand. Any pre-existing
    value for the same property is stripped from the selected content first,
    since a nested element's inline style would otherwise keep winning the CSS
-   cascade over whatever we just wrapped it in. */
+   cascade over whatever we just wrapped it in.
+
+   extractContents()/insertNode() below don't just move text around -- they
+   tear out and rebuild the DOM nodes the selection was anchored to, which a
+   plain "build a new Range around whatever we just inserted" approach (what
+   this used to do) gets subtly wrong often enough to matter in practice: the
+   caret ends up at the very start of the field instead of on the formatted
+   text, breaking a second shortcut press on the same selection and chained
+   formatting (highlight then resize). rangy's save/restore drops invisible
+   marker elements at the selection's boundaries before the mutation and
+   finds them again after, which survives this kind of DOM surgery by
+   design -- the one thing here worth a dependency for rather than
+   hand-rolling a second time. */
 export function applyInlineStyleToSelection(target, prop, value){
   const sel = window.getSelection();
   if(!sel || sel.rangeCount===0 || sel.isCollapsed) return false;
+  if(!target.contains(sel.getRangeAt(0).commonAncestorContainer)) return false;
+  const saved = rangy.saveSelection(window);
+  // re-fetch: saveSelection() just inserted marker nodes at the selection's
+  // boundaries, so a Range handle grabbed before that may not reflect them.
   const range = sel.getRangeAt(0);
-  if(!target.contains(range.commonAncestorContainer)) return false;
   const frag = range.extractContents();
   stripStyleProp(frag, prop);
   unwrapBareSpans(frag);
-  let inserted;
   if(value){
     const span = document.createElement("span");
     span.style.setProperty(prop, value);
     span.appendChild(frag);
     range.insertNode(span);
-    inserted = [span];
   } else {
-    inserted = [...frag.childNodes];
     range.insertNode(frag);
   }
-  reselectNodes(sel, inserted);
+  if(saved) rangy.restoreSelection(saved);
   return true;
 }
-/* True if background-color is already set somewhere up the selection's
-   ancestor chain -- used so a repeat Highlight press (or shortcut) turns the
-   highlight back off instead of only ever adding more of it. A heuristic for
-   a partially-highlighted selection, same tradeoff execCommand's own toggle
-   commands make. */
+/* A Range anchored at an element+childIndex (rather than inside a text
+   node) -- exactly what's left behind after wrapping a selection in a new
+   element, since that's naturally expressed as "select this one child" at
+   the parent level -- needs to descend to that child before any ancestor
+   walk makes sense, or the walk starts one level too high and never
+   reaches a span sitting right at that position. */
+function firstSelectedNode(range){
+  const c = range.startContainer;
+  return (c.nodeType===1 && c.childNodes[range.startOffset]) ? c.childNodes[range.startOffset] : c;
+}
+/* True if background-color is already set somewhere at or above the
+   selection's own position -- used so a repeat Highlight press (or
+   shortcut) turns the highlight back off instead of only ever adding more
+   of it. A heuristic for a partially-highlighted selection, same tradeoff
+   execCommand's own toggle commands make. */
 function selectionHasProp(range, target, prop){
-  let cur = range.commonAncestorContainer;
+  let cur = firstSelectedNode(range);
   if(cur.nodeType!==1) cur = cur.parentElement;
   while(cur && cur!==target.parentElement){
     if(cur.style && cur.style.getPropertyValue(prop)) return true;
@@ -165,7 +184,12 @@ export function toggleHighlight(target, color){
 export function stepFontSize(target, delta){
   const sel = window.getSelection();
   if(!sel || sel.rangeCount===0 || sel.isCollapsed) return false;
-  let node = sel.anchorNode;
+  // sel.anchorNode alone isn't enough: a range that selects whole child
+  // nodes (exactly what's left behind after wrapping a selection in a span)
+  // anchors at the *container*, with the actual formatted span sitting at
+  // a child offset below it -- walking up from the container would skip
+  // right past that span and never see its font-size.
+  let node = firstSelectedNode(sel.getRangeAt(0));
   let curPx = null;
   while(node && node!==target.parentElement){
     if(node.nodeType===1 && node.style && node.style.fontSize){ curPx = parseInt(node.style.fontSize,10); break; }

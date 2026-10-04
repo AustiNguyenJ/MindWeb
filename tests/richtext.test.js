@@ -127,6 +127,21 @@ describe("the formatting bar", () => {
     expect(app.$(".node.type-note .cf-rich span")).toBeNull();
   });
 
+  it.skipIf(onBaseline)("toggles the same highlight back off on a second press, without re-selecting", () => {
+    const body = noteBody();
+    app.typeRich(body, "highlight me");
+    app.focus(body);
+    selectAllText(app.window, body);
+    const btn = app.$('.node.type-note .fmt-bar button[data-cmd="highlight"]');
+    app.click(btn);
+    // deliberately NOT re-selecting here -- the whole point is that the
+    // first click must leave a selection the second click both sees (so it
+    // knows to toggle off) and can still act on
+    app.click(btn);
+
+    expect(app.$(".node.type-note .cf-rich span")).toBeNull();
+  });
+
   it.skipIf(onBaseline)("survives sanitizing on blur", () => {
     const body = noteBody();
     app.typeRich(body, "highlight me");
@@ -149,6 +164,22 @@ describe("the formatting bar", () => {
 
     const span = app.$(".node.type-note .cf-rich span");
     expect(span.style.fontSize).toBe("16px");
+  });
+
+  it.skipIf(onBaseline)("grows the font size again on a second press, without re-selecting", () => {
+    const body = noteBody();
+    app.typeRich(body, "resize me");
+    app.focus(body);
+    selectAllText(app.window, body);
+    const btn = app.$('.node.type-note .fmt-bar button[data-cmd="fontSizeUp"]');
+    app.click(btn);
+    // deliberately NOT re-selecting here -- the whole point is that the
+    // first click must not have collapsed the selection the second click
+    // needs
+    app.click(btn);
+
+    const span = app.$(".node.type-note .cf-rich span");
+    expect(span.style.fontSize).toBe("20px");
   });
 
   it.skipIf(onBaseline)("does not collapse the selection when a toolbar command leaves the content unchanged", () => {
