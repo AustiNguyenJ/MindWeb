@@ -445,7 +445,10 @@ async function cloudReadAll(){
   if(nbErr || bErr || tErr){ console.error("[mindmap] cloud read failed", nbErr||bErr||tErr); return false; }
   if(!boardRows.length) return false;
 
-  state.notebooks = nbRows.map(r=>({ id:r.id, name:r.name, collapsed:!!r.collapsed }));
+  state.notebooks = nbRows.map(r=>({
+    id:r.id, name:r.name, collapsed:!!r.collapsed,
+    parentId:r.parent_id||null, order:(typeof r.sort_order==="number"?r.sort_order:0)
+  }));
   state.boards = boardRows.map(r=>({
     id:r.id, name:r.name, description:r.description||"", notebookId:r.notebook_id,
     order:r.sort_order, pinned:!!r.pinned
@@ -499,7 +502,20 @@ export async function cloudPersistIndex(){
   // owner_id for boards the signed-in user doesn't own. Harmless for now
   // since there's no way yet for a board to belong to anyone else.
   if(state.notebooks.length){
-    const rows = state.notebooks.map(nb=>({ id:nb.id, owner_id:uid, name:nb.name, collapsed:!!nb.collapsed }));
+    // parent_id is a self-referencing FK: within one multi-row upsert,
+    // Postgres checks each row's FK as it's written, so a child row must
+    // come after its parent's row in this list or the insert 400s.
+    const depthOf = (nb, seen=new Set())=>{
+      if(!nb.parentId || seen.has(nb.id)) return 0;
+      const parent = state.notebooks.find(n=>n.id===nb.parentId);
+      if(!parent) return 0;
+      seen.add(nb.id);
+      return 1 + depthOf(parent, seen);
+    };
+    const rows = state.notebooks.slice().sort((a,b)=>depthOf(a)-depthOf(b)).map(nb=>({
+      id:nb.id, owner_id:uid, name:nb.name, collapsed:!!nb.collapsed,
+      parent_id:nb.parentId||null, sort_order:(typeof nb.order==="number"?nb.order:0)
+    }));
     const { error } = await state.supabaseClient.from("notebooks").upsert(rows);
     if(error) throw error;
   }

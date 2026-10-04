@@ -52,14 +52,19 @@ export function importAll(file){
       if(added){ queueTypesSave(); renderTypeToolbar(); }
       migrateLongtextKinds();
     }
-    // recreate the imported notebooks under fresh ids, mapping old->new
+    // recreate the imported notebooks under fresh ids, mapping old->new.
+    // Two passes: the id map must be complete before any parentId can be
+    // remapped, since a notebook's parent can appear later in the array.
     const nbMap = {};
     let importNbId = null;
     if(Array.isArray(payload.notebooks) && payload.notebooks.length){
+      payload.notebooks.forEach(onb=>{ nbMap[onb.id] = "nb_"+uid().slice(0,8); });
       payload.notebooks.forEach(onb=>{
-        const nid = "nb_"+uid().slice(0,8);
-        nbMap[onb.id] = nid;
-        state.notebooks.push({ id:nid, name:onb.name||"Imported notebook", collapsed:false });
+        state.notebooks.push({
+          id:nbMap[onb.id], name:onb.name||"Imported notebook", collapsed:false,
+          parentId:(onb.parentId && nbMap[onb.parentId]) ? nbMap[onb.parentId] : null,
+          order:(typeof onb.order==="number" ? onb.order : 0)
+        });
       });
     } else {
       importNbId = "nb_"+uid().slice(0,8);

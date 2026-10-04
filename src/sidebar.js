@@ -2,7 +2,7 @@ import { el } from "./dom.js";
 import { state } from "./state.js";
 import { uid, escapeHtml, escapeAttr } from "./util.js";
 import { showToast } from "./toast.js";
-import { getBoard, boardsInNotebook, renumberNotebook } from "./boards.js";
+import { getBoard, boardsInNotebook, renumberNotebook, notebooksInParent, renumberNotebooksInParent, isNotebookDescendant } from "./boards.js";
 import { openPageMenu } from "./pageMenu.js";
 import { centerView } from "./view.js";
 import { renderBoard } from "./render.js";
@@ -11,9 +11,11 @@ import { queueIndexSave, persistDeleteBoard, persistDeleteNotebook, saveBoardNow
 import { confirmModal } from "./confirmModal.js";
 import { renderQuickAccessToolbar } from "./toolbar.js";
 
-/* The sidebar: notebooks, the pages inside them, favourites, and the page
-   header. Pages are ordered pinned-first and then by sort order, and can be
-   dragged to reorder or to move between notebooks. */
+/* The sidebar: notebooks (which can nest other notebooks), the pages inside
+   them, favourites, and the page header. Pages are ordered pinned-first and
+   then by sort order, and can be dragged to reorder or to move between
+   notebooks. Notebooks themselves can be dragged to reorder among their
+   siblings or dropped onto another notebook to nest inside it. */
 
 /* ---------- multi-select (for bulk-deleting pages) ---------------------
    Local to this module, like the designer's selected-type or the picker's
@@ -88,45 +90,115 @@ export function renderFavorites(){
   });
 }
 
+/* Render one notebook and, recursively, its nested sub-notebooks. Nesting
+   depth comes for free from the DOM nesting (.nb-children .nb gets indented
+   by CSS), so this needs no explicit depth counter. */
+function renderNotebookNode(nb){
+  const pages = boardsInNotebook(nb.id);
+  const children = notebooksInParent(nb.id);
+  const pagesHtml = pages.length
+    ? pages.map(b=>
+        '<div class="board-item '+(b.id===state.currentBoardId?'active':'')+(b.pinned?' pinned':'')+
+          (selectedBoardIds.has(b.id)?' multi-selected':'')+'" draggable="true" data-id="'+b.id+'">' +
+        (b.pinned?'<span class="pin-ico" title="Pinned">\u2605</span>':'') +
+        '<span class="bname">'+escapeHtml(b.name||"Untitled")+'</span>' +
+        '<button class="board-menu-btn" data-id="'+b.id+'" title="Page options">\u22ef</button></div>').join('')
+    : '<div class="nb-emptypages">No pages yet</div>';
+  const childrenHtml = children.map(renderNotebookNode).join('');
+  return '<div class="nb '+(nb.collapsed?'collapsed':'')+'" data-nb="'+nb.id+'">' +
+    '<div class="nb-head" data-nb="'+nb.id+'">' +
+      '<svg class="nb-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m6 9 6 6 6-6"/></svg>' +
+      '<span class="nb-name">'+escapeHtml(nb.name||"Notebook")+'</span>' +
+      '<span class="nb-count">'+pages.length+'</span>' +
+      '<span class="nb-actions">' +
+        '<button class="nb-add-page" data-nb="'+nb.id+'" title="New page here">+</button>' +
+        '<button class="nb-add-sub" data-nb="'+nb.id+'" title="New sub-notebook here">\u2295</button>' +
+        '<button class="nb-rename" data-nb="'+nb.id+'" title="Rename notebook">\u270e</button>' +
+        '<button class="nb-del-btn" data-nb="'+nb.id+'" title="Delete notebook">\u00d7</button>' +
+      '</span>' +
+    '</div>' +
+    '<div class="nb-children" data-nb="'+nb.id+'">'+childrenHtml+'</div>' +
+    '<div class="nb-pages" data-nb="'+nb.id+'">'+pagesHtml+'</div>' +
+  '</div>';
+}
+
 export function renderBoardList(){
   renderFavorites();
   const host = treeEl();
   if(!host) return;
-  host.innerHTML = state.notebooks.map(nb=>{
-    const pages = boardsInNotebook(nb.id);
-    const pagesHtml = pages.length
-      ? pages.map(b=>
-          '<div class="board-item '+(b.id===state.currentBoardId?'active':'')+(b.pinned?' pinned':'')+
-            (selectedBoardIds.has(b.id)?' multi-selected':'')+'" draggable="true" data-id="'+b.id+'">' +
-          (b.pinned?'<span class="pin-ico" title="Pinned">\u2605</span>':'') +
-          '<span class="bname">'+escapeHtml(b.name||"Untitled")+'</span>' +
-          '<button class="board-menu-btn" data-id="'+b.id+'" title="Page options">\u22ef</button></div>').join('')
-      : '<div class="nb-emptypages">No pages yet</div>';
-    return '<div class="nb '+(nb.collapsed?'collapsed':'')+'" data-nb="'+nb.id+'">' +
-      '<div class="nb-head" data-nb="'+nb.id+'">' +
-        '<svg class="nb-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m6 9 6 6 6-6"/></svg>' +
-        '<span class="nb-name">'+escapeHtml(nb.name||"Notebook")+'</span>' +
-        '<span class="nb-count">'+pages.length+'</span>' +
-        '<span class="nb-actions">' +
-          '<button class="nb-add-page" data-nb="'+nb.id+'" title="New page here">+</button>' +
-          '<button class="nb-rename" data-nb="'+nb.id+'" title="Rename notebook">\u270e</button>' +
-          '<button class="nb-del-btn" data-nb="'+nb.id+'" title="Delete notebook">\u00d7</button>' +
-        '</span>' +
-      '</div>' +
-      '<div class="nb-pages" data-nb="'+nb.id+'">'+pagesHtml+'</div>' +
-    '</div>';
-  }).join('');
+  host.innerHTML = notebooksInParent(null).map(renderNotebookNode).join('');
 
-  // notebook header: toggle collapse
+  // notebook header: toggle collapse, drag to reorder/nest among notebooks
   host.querySelectorAll(".nb-head").forEach(head=>{
+    const nbId = head.dataset.nb;
     head.addEventListener("click",(e)=>{
       if(e.target.closest(".nb-actions")) return;
-      const nb = state.notebooks.find(n=>n.id===head.dataset.nb);
+      const nb = state.notebooks.find(n=>n.id===nbId);
       if(nb){ nb.collapsed = !nb.collapsed; renderBoardList(); queueIndexSave(); }
+    });
+    head.setAttribute("draggable","true");
+    head.addEventListener("dragstart",(e)=>{
+      e.stopPropagation();
+      e.dataTransfer.setData("application/x-notebook", nbId);
+      e.dataTransfer.effectAllowed = "move";
+      head.closest(".nb").classList.add("dragging");
+    });
+    head.addEventListener("dragend",(e)=>{
+      e.stopPropagation();
+      head.closest(".nb").classList.remove("dragging");
+      clearDropMarks();
+    });
+    // dragging a notebook over another's header: top/bottom edge reorders
+    // as a sibling, the middle band nests it inside. Dragging a page here
+    // keeps the existing "move this page into the notebook" behavior.
+    head.addEventListener("dragover",(e)=>{
+      e.preventDefault(); e.stopPropagation();
+      e.dataTransfer.dropEffect = "move";
+      clearDropMarks();
+      const nbEl = head.closest(".nb");
+      if(e.dataTransfer.types.includes("application/x-notebook")){
+        const r = head.getBoundingClientRect();
+        const frac = (e.clientY - r.top) / r.height;
+        if(frac < 0.25) nbEl.classList.add("nb-drop-above");
+        else if(frac > 0.75) nbEl.classList.add("nb-drop-below");
+        else head.classList.add("drop-into");
+      } else {
+        head.classList.add("drop-into");
+      }
+    });
+    head.addEventListener("dragleave",()=>{
+      head.classList.remove("drop-into");
+      head.closest(".nb").classList.remove("nb-drop-above","nb-drop-below");
+    });
+    head.addEventListener("drop",(e)=>{
+      e.preventDefault(); e.stopPropagation();
+      const nbEl = head.closest(".nb");
+      const above = nbEl.classList.contains("nb-drop-above");
+      const below = nbEl.classList.contains("nb-drop-below");
+      clearDropMarks();
+      const draggedNbId = e.dataTransfer.getData("application/x-notebook");
+      if(draggedNbId){
+        if(above || below) reorderNotebook(draggedNbId, nbId, below);
+        else nestNotebook(draggedNbId, nbId);
+        return;
+      }
+      const pageId = e.dataTransfer.getData("text/plain");
+      const b = state.boards.find(x=>x.id===pageId);
+      if(b && nbId && b.notebookId!==nbId){
+        b.notebookId = nbId;
+        b.order = boardsInNotebook(nbId).length;   // drop at the end of the target notebook
+        renumberNotebook(nbId);
+        const nb = state.notebooks.find(n=>n.id===nbId);
+        if(nb) nb.collapsed = false;
+        renderBoardList(); queueIndexSave();
+      }
     });
   });
   host.querySelectorAll(".nb-add-page").forEach(btn=>{
     btn.addEventListener("click",(e)=>{ e.stopPropagation(); newBoard(btn.dataset.nb); });
+  });
+  host.querySelectorAll(".nb-add-sub").forEach(btn=>{
+    btn.addEventListener("click",(e)=>{ e.stopPropagation(); newNotebook(btn.dataset.nb); });
   });
   host.querySelectorAll(".nb-rename").forEach(btn=>{
     btn.addEventListener("click",(e)=>{ e.stopPropagation(); startRenameNotebook(btn.dataset.nb); });
@@ -198,10 +270,15 @@ export function renderBoardList(){
     });
   });
 
-  // drop targets: a notebook accepts pages dropped onto its header or empty page area
-  host.querySelectorAll(".nb-head, .nb-pages").forEach(zone=>{
-    zone.addEventListener("dragover",(e)=>{ e.preventDefault(); e.dataTransfer.dropEffect="move";
-      zone.closest(".nb").querySelector(".nb-head").classList.add("drop-into"); });
+  // drop target: a notebook's empty page area also accepts a page dropped
+  // straight onto it (the header's own drop zone is wired above, and also
+  // handles notebook-on-notebook reorder/nest).
+  host.querySelectorAll(".nb-pages").forEach(zone=>{
+    zone.addEventListener("dragover",(e)=>{
+      if(!e.dataTransfer.types.includes("text/plain")) return;
+      e.preventDefault(); e.dataTransfer.dropEffect="move";
+      zone.closest(".nb").querySelector(".nb-head").classList.add("drop-into");
+    });
     zone.addEventListener("dragleave",()=>{ zone.closest(".nb").querySelector(".nb-head").classList.remove("drop-into"); });
     zone.addEventListener("drop",(e)=>{
       e.preventDefault();
@@ -226,6 +303,10 @@ export function renderBoardList(){
 export function clearDropMarks(){
   treeEl().querySelectorAll(".board-item.drop-above,.board-item.drop-below")
     .forEach(x=>x.classList.remove("drop-above","drop-below"));
+  treeEl().querySelectorAll(".nb-head.drop-into")
+    .forEach(x=>x.classList.remove("drop-into"));
+  treeEl().querySelectorAll(".nb.nb-drop-above,.nb.nb-drop-below")
+    .forEach(x=>x.classList.remove("nb-drop-above","nb-drop-below"));
 }
 
 /* Move a page next to a target page. If they're in different notebooks the
@@ -244,6 +325,47 @@ export function reorderPage(pageId, targetId, below){
   if(below) idx += 1;
   group.splice(idx, 0, b);
   group.forEach((x,i)=>{ x.order = i; });
+  renderBoardList(); queueIndexSave();
+}
+
+/* Move a notebook next to a sibling notebook (the target keeps its own
+   parent, and the dragged notebook adopts it). Refuses to drop a notebook
+   onto one of its own descendants, which would otherwise disconnect that
+   whole subtree from the tree. */
+export function reorderNotebook(draggedId, targetId, below){
+  if(draggedId===targetId) return;
+  const d = state.notebooks.find(n=>n.id===draggedId);
+  const t = state.notebooks.find(n=>n.id===targetId);
+  if(!d || !t) return;
+  if(isNotebookDescendant(draggedId, targetId)) return;
+  d.parentId = t.parentId;
+  const group = notebooksInParent(t.parentId).filter(x=>x.id!==draggedId);
+  let idx = group.findIndex(x=>x.id===targetId);
+  if(below) idx += 1;
+  group.splice(idx, 0, d);
+  group.forEach((x,i)=>{ x.order = i; });
+  renderBoardList(); queueIndexSave();
+}
+
+/* Nest a notebook inside another, appended after its existing children. */
+export function nestNotebook(draggedId, targetId){
+  if(draggedId===targetId) return;
+  const d = state.notebooks.find(n=>n.id===draggedId);
+  if(!d) return;
+  if(isNotebookDescendant(draggedId, targetId)) return;
+  d.parentId = targetId;
+  renumberNotebooksInParent(targetId);
+  const t = state.notebooks.find(n=>n.id===targetId);
+  if(t) t.collapsed = false;
+  renderBoardList(); queueIndexSave();
+}
+
+/* Pull a notebook back out to the top level, dropped at the end. */
+export function moveNotebookToRoot(draggedId){
+  const d = state.notebooks.find(n=>n.id===draggedId);
+  if(!d || !d.parentId) return;
+  d.parentId = null;
+  renumberNotebooksInParent(null);
   renderBoardList(); queueIndexSave();
 }
 
@@ -270,27 +392,40 @@ export function startRenameNotebook(id){
   input.addEventListener("click",e=>e.stopPropagation());
 }
 
-export function newNotebook(){
-  const nb = { id:"nb_"+uid().slice(0,8), name:"New Notebook", collapsed:false };
+export function newNotebook(parentId){
+  const pid = parentId || null;
+  const nb = { id:"nb_"+uid().slice(0,8), name:"New Notebook", collapsed:false, parentId:pid, order:notebooksInParent(pid).length };
   state.notebooks.push(nb);
+  if(pid){
+    const parent = state.notebooks.find(n=>n.id===pid);
+    if(parent) parent.collapsed = false;
+  }
   renderBoardList(); queueIndexSave();
   startRenameNotebook(nb.id);
 }
 
+/* Deleting a notebook never deletes its contents: its pages move up to its
+   parent (or another top-level notebook, if it had none), and any nested
+   sub-notebooks are promoted to sit where it was, one level up. */
 export async function deleteNotebook(id){
   if(state.notebooks.length===1){ showToast("Keep at least one notebook"); return; }
   const pages = boardsInNotebook(id);
+  const children = notebooksInParent(id);
   const nb = state.notebooks.find(n=>n.id===id);
-  let msg = "";
-  if(pages.length){
-    const other = state.notebooks.find(n=>n.id!==id);
-    msg = "Its "+pages.length+" page(s) will move to \""+other.name+"\". (To delete the pages too, remove them first.)";
-  }
+  const parts = [];
+  if(pages.length) parts.push(pages.length+" page(s)");
+  if(children.length) parts.push(children.length+" sub-notebook(s)");
+  const msg = parts.length ? "Its "+parts.join(" and ")+" will move up a level. (To delete them too, remove them first.)" : "";
   const ok = await confirmModal({ title:'Delete notebook "'+(nb?nb.name:"")+'"?', message:msg });
   if(!ok) return;
-  const fallback = state.notebooks.find(n=>n.id!==id).id;
+  const parentStillValid = nb.parentId && state.notebooks.some(n=>n.id===nb.parentId);
+  const fallback = parentStillValid ? nb.parentId
+    : (notebooksInParent(null).find(n=>n.id!==id) || state.notebooks.find(n=>n.id!==id)).id;
   pages.forEach(b=>b.notebookId=fallback);
+  children.forEach(c=>{ c.parentId = nb.parentId; });
   state.notebooks = state.notebooks.filter(n=>n.id!==id);
+  renumberNotebook(fallback);
+  renumberNotebooksInParent(nb.parentId);
   persistDeleteNotebook(id);
   renderBoardList(); queueIndexSave();
 }
@@ -417,11 +552,29 @@ export function initSidebar(){
   el("boardTitle").addEventListener("input",(e)=>{ getBoard().name=e.target.value; renderBoardList(); queueIndexSave(); });
   el("boardDesc").addEventListener("input",(e)=>{ getBoard().description=e.target.value; queueIndexSave(); });
   el("newBoardBtn").addEventListener("click", ()=>newBoard());
-  el("newNotebookBtn").addEventListener("click", newNotebook);
+  el("newNotebookBtn").addEventListener("click", ()=>newNotebook());
   el("favHead").addEventListener("click", ()=>{
     favCollapsed = !favCollapsed;
     el("favWrap").classList.toggle("collapsed", favCollapsed);
   });
   el("multiSelectDeleteBtn").addEventListener("click", ()=>{ deleteBoards([...selectedBoardIds]); });
   el("multiSelectClearBtn").addEventListener("click", clearMultiSelect);
+
+  // dropping a dragged notebook on empty tree background (not onto another
+  // notebook, which is handled by that notebook's own drop zone) pulls it
+  // back out to the top level. Bound once here, not in renderBoardList,
+  // since the tree host element itself survives every re-render.
+  const tree = treeEl();
+  if(tree){
+    tree.addEventListener("dragover",(e)=>{
+      if(e.target.closest(".nb")) return;
+      if(!e.dataTransfer.types.includes("application/x-notebook")) return;
+      e.preventDefault(); e.dataTransfer.dropEffect = "move";
+    });
+    tree.addEventListener("drop",(e)=>{
+      if(e.target.closest(".nb")) return;
+      const draggedNbId = e.dataTransfer.getData("application/x-notebook");
+      if(draggedNbId){ e.preventDefault(); moveNotebookToRoot(draggedNbId); }
+    });
+  }
 }

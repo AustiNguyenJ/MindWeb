@@ -108,6 +108,10 @@
     font-size:12.5px;font-weight:600;color:var(--ink);}
   .nb-head:hover{background:var(--bg);}
   .nb-head.drop-into{background:var(--accent-soft);box-shadow:inset 0 0 0 1px var(--accent);}
+  .nb-head[draggable=true]{cursor:grab;}
+  .nb.dragging > .nb-head{opacity:0.4;}
+  .nb.nb-drop-above{box-shadow:inset 0 2px 0 var(--accent);}
+  .nb.nb-drop-below{box-shadow:inset 0 -2px 0 var(--accent);}
   .nb-caret{width:14px;height:14px;flex:none;color:var(--muted-2);transition:transform .15s ease;}
   .nb.collapsed .nb-caret{transform:rotate(-90deg);}
   .nb-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
@@ -119,6 +123,8 @@
   .nb-actions button:hover{background:var(--surface);color:var(--ink);}
   .nb-actions button.nb-del-btn:hover{color:var(--danger);}
 
+  .nb-children{padding-left:12px;}
+  .nb.collapsed .nb-children{display:none;}
   .nb-pages{padding-left:8px;margin-top:1px;}
   .nb.collapsed .nb-pages{display:none;}
   .board-item{display:flex;align-items:center;gap:7px;padding:6px 8px 6px 14px;border-radius:7px;cursor:pointer;
