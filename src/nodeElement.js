@@ -1,5 +1,5 @@
 import { state } from "./state.js";
-import { COLORS, COPY_ICON, HIGHLIGHT_COLOR } from "./constants.js";
+import { COLORS, COPY_ICON } from "./constants.js";
 import {
   escapeHtml,
   escapeAttr,
@@ -8,8 +8,6 @@ import {
   normalizeUrl,
   openLinkBackground,
   themedNodeColor,
-  applyInlineStyleToSelection,
-  toggleHighlight,
   stepFontSize,
   handleRichShortcut,
 } from "./util.js";
@@ -135,9 +133,6 @@ export function nodeElement(node){
         '<button data-cmd="createLink" title="Add link">Link</button>' +
         '<button data-cmd="unlink" title="Remove link">\u2717</button>' +
         '<span class="sep"></span>' +
-        '<button class="fmt-hl" data-cmd="highlight" title="Highlight (Ctrl+H)">H</button>' +
-        '<button data-cmd="removeHighlight" title="Remove highlight">H\u2717</button>' +
-        '<span class="sep"></span>' +
         '<button data-cmd="copytext" title="Copy this text">'+COPY_ICON+'</button>' +
       '</div>'
     : '';
@@ -255,10 +250,10 @@ export function nodeElement(node){
       }
     });
     // Undo still works natively. Bold/italic/underline are handled explicitly
-    // here (same as strikethrough/highlight/grow-shrink font below) rather
-    // than left to the browser's own Ctrl/Cmd+B/I/U default, because that
-    // default isn't trustworthy across browsers -- e.g. Firefox rebinds
-    // plain Ctrl/Cmd+B to toggling its Bookmarks sidebar at the chrome level.
+    // here (same as strikethrough/grow-shrink font below) rather than left
+    // to the browser's own Ctrl/Cmd+B/I/U default, because that default
+    // isn't trustworthy across browsers -- e.g. Firefox rebinds plain
+    // Ctrl/Cmd+B to toggling its Bookmarks sidebar at the chrome level.
     rich.addEventListener("keydown",(e)=>{
       handleRichShortcut(e, rich, (clean)=>{
         node.bodyHtml = clean;
@@ -283,17 +278,14 @@ export function nodeElement(node){
       const cmd = btn.dataset.cmd;
       if(cmd==="copytext"){ copyText(richToText(target.innerHTML), btn); return; }
       let clean;
-      if(cmd==="fontSizeUp" || cmd==="fontSizeDown" || cmd==="highlight" || cmd==="removeHighlight"){
+      if(cmd==="fontSizeUp" || cmd==="fontSizeDown"){
         // these only ever wrap/unwrap a <span style="..."> whose one property
-        // comes from HIGHLIGHT_COLOR or FONT_SIZES, never from user input --
-        // nothing for sanitizeHtml to catch, and running it anyway would
-        // reassign innerHTML on every click (its output never textually
-        // matches the DOM's own CSSOM style serialization) and collapse the
-        // selection a follow-up click needs.
-        if(cmd==="fontSizeUp") stepFontSize(target, 1);
-        else if(cmd==="fontSizeDown") stepFontSize(target, -1);
-        else if(cmd==="highlight") toggleHighlight(target, HIGHLIGHT_COLOR);
-        else applyInlineStyleToSelection(target, "background-color", null);
+        // comes from FONT_SIZES, never from user input -- nothing for
+        // sanitizeHtml to catch, and running it anyway would reassign
+        // innerHTML on every click (its output never textually matches the
+        // DOM's own CSSOM style serialization) and collapse the selection a
+        // follow-up click needs.
+        stepFontSize(target, cmd==="fontSizeUp" ? 1 : -1);
         clean = target.innerHTML;
       } else {
         try{ document.execCommand("styleWithCSS", false, false); }catch(err){}

@@ -319,8 +319,6 @@
   }
   .fmt-bar button:hover{background:var(--bg);color:var(--accent);}
   .fmt-bar .sep{width:1px;background:var(--line);margin:2px 2px;}
-  .fmt-bar button.fmt-hl{background:#ffeb3b40;color:var(--ink);}
-  .fmt-bar button.fmt-hl:hover{background:#ffeb3b66;color:var(--ink);}
 
   /* ticket block */
   .node.type-ticket{height:auto !important;}

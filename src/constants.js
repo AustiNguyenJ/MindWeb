@@ -34,12 +34,9 @@ export const RICH_OK_TAGS = ["B","STRONG","I","EM","U","S","STRIKE","A","UL","OL
 export const RICH_DROP_TAGS = ["SCRIPT","STYLE","IFRAME","OBJECT","EMBED","NOSCRIPT","TEMPLATE","SVG","MATH"];
 /* The inline style properties a rich-text SPAN is allowed to carry, and the
    value shape each accepts -- everything else is stripped on sanitize. This
-   is what lets font size and highlight color survive a save/reload without
-   opening a path for arbitrary CSS (e.g. position/url()) to come along. */
-const RICH_STYLE_COLOR = /^(#[0-9a-f]{3,8}|rgba?\([\d.,\s%]+\))$/;
+   is what lets font size survive a save/reload without opening a path for
+   arbitrary CSS (e.g. position/url()) to come along. */
 export const RICH_STYLE_PROPS = {
-  "background-color": RICH_STYLE_COLOR,
-  "color": RICH_STYLE_COLOR,
   "font-size": /^\d{1,3}px$/,
 };
 /* Font-size steps for the rich-text toolbar's grow/shrink buttons and the
@@ -47,10 +44,6 @@ export const RICH_STYLE_PROPS = {
    block's own default size -- so a fresh document never carries a font-size
    style until the user actually changes it. */
 export const FONT_SIZES = [11, 13, 16, 20, 28];
-/* The one highlighter colour, same idea as a classic editor's default
-   highlight swatch. Semi-transparent so it reads fine over both themes
-   without needing a dark-mode remap like the node fill colours get. */
-export const HIGHLIGHT_COLOR = "#ffeb3b66";
 export const COPY_ICON = "\u29C9";
 /* window.storage caps each key near 5MB. A board with many images can exceed
    that; the write then fails and the old value stays, which shows as blank or

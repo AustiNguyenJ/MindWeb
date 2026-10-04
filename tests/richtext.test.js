@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { createApp, exportJson, tick, DEFAULT_ENTRY } from "./harness.js";
 
-// the richer formatting bar (underline, strikethrough, font size, highlight)
-// is new, app-only behavior -- the untouched original only ever had the
-// seven commands checked below
+// the richer formatting bar (underline, strikethrough, font size) is new,
+// app-only behavior -- the untouched original only ever had the seven
+// commands checked below
 const onBaseline = DEFAULT_ENTRY.includes("original");
 
 let app;
@@ -92,7 +92,6 @@ describe("the formatting bar", () => {
       "fontSizeDown", "fontSizeUp",
       "insertUnorderedList", "insertOrderedList",
       "createLink", "unlink",
-      "highlight", "removeHighlight",
       "copytext",
     ]);
   });
@@ -104,78 +103,6 @@ describe("the formatting bar", () => {
     sel.removeAllRanges();
     sel.addRange(range);
   }
-
-  it.skipIf(onBaseline)("highlights selected text from the toolbar", () => {
-    const body = noteBody();
-    app.typeRich(body, "highlight me");
-    app.focus(body);
-    selectAllText(app.window, body);
-    app.click(app.$('.node.type-note .fmt-bar button[data-cmd="highlight"]'));
-
-    const span = app.$(".node.type-note .cf-rich span");
-    expect(span).toBeTruthy();
-    expect(span.style.backgroundColor).toBeTruthy();
-    expect(span.textContent).toBe("highlight me");
-  });
-
-  it.skipIf(onBaseline)("removes an existing highlight from the toolbar", () => {
-    const body = noteBody();
-    app.typeRich(body, '<span style="background-color:#ffeb3b66">highlight me</span>');
-    app.focus(body);
-    selectAllText(app.window, body);
-    app.click(app.$('.node.type-note .fmt-bar button[data-cmd="removeHighlight"]'));
-    expect(app.$(".node.type-note .cf-rich span")).toBeNull();
-  });
-
-  it.skipIf(onBaseline)("toggles the same highlight back off on a second press, without re-selecting", () => {
-    const body = noteBody();
-    app.typeRich(body, "highlight me");
-    app.focus(body);
-    selectAllText(app.window, body);
-    const btn = app.$('.node.type-note .fmt-bar button[data-cmd="highlight"]');
-    app.click(btn);
-    // deliberately NOT re-selecting here -- the whole point is that the
-    // first click must leave a selection the second click both sees (so it
-    // knows to toggle off) and can still act on
-    app.click(btn);
-
-    expect(app.$(".node.type-note .cf-rich span")).toBeNull();
-  });
-
-  it.skipIf(onBaseline)("removes a pre-existing highlight with the Ctrl+H shortcut", () => {
-    const body = noteBody();
-    app.typeRich(body, '<span style="background-color:#ffeb3b66">highlight me</span>');
-    app.focus(body);
-    selectAllText(app.window, body);
-    app.key(body, "h", { ctrlKey: true });
-
-    expect(app.$(".node.type-note .cf-rich span")).toBeNull();
-  });
-
-  it.skipIf(onBaseline)("leaves no stray rangy marker behind after removing a highlight", () => {
-    const body = noteBody();
-    app.typeRich(body, '<span style="background-color:#ffeb3b66">highlight me</span>');
-    app.focus(body);
-    selectAllText(app.window, body);
-    app.click(app.$('.node.type-note .fmt-bar button[data-cmd="removeHighlight"]'));
-
-    const html = app.$(".node.type-note .cf-rich").innerHTML;
-    expect(html).not.toMatch(/rangySelectionBoundary|selectionBoundary_/);
-    expect(html).toBe("highlight me");
-  });
-
-  it.skipIf(onBaseline)("survives sanitizing on blur", () => {
-    const body = noteBody();
-    app.typeRich(body, "highlight me");
-    app.focus(body);
-    selectAllText(app.window, body);
-    app.click(app.$('.node.type-note .fmt-bar button[data-cmd="highlight"]'));
-    app.blur(app.$(".node.type-note .cf-rich"));
-
-    const span = app.$(".node.type-note .cf-rich span");
-    expect(span).toBeTruthy();
-    expect(span.style.backgroundColor).toBeTruthy();
-  });
 
   it.skipIf(onBaseline)("grows the selected text's font size", () => {
     const body = noteBody();
@@ -229,18 +156,6 @@ describe("the formatting bar", () => {
 
     app.key(body, "i", { ctrlKey: true });
     expect(app.window.getSelection().isCollapsed).toBe(false);
-  });
-
-  it.skipIf(onBaseline)("toggles highlight with Ctrl+H", () => {
-    const body = noteBody();
-    app.typeRich(body, "shortcut me");
-    app.focus(body);
-    selectAllText(app.window, body);
-    app.key(body, "h", { ctrlKey: true });
-
-    const span = app.$(".node.type-note .cf-rich span");
-    expect(span).toBeTruthy();
-    expect(span.style.backgroundColor).toBeTruthy();
   });
 
   it.skipIf(onBaseline)("prevents the default action for Ctrl+B/I/U so the browser can't hijack them", () => {
@@ -317,10 +232,10 @@ describe.skipIf(onBaseline)("repeating-group rich subfields", () => {
     node = app.$("#canvasInner .node:not(.type-header)");
 
     const grich = node.querySelector(".grich");
-    app.typeRich(grich, "highlight me");
+    app.typeRich(grich, "resize me");
     app.focus(grich);
     selectAllText(app.window, grich);
-    app.click(node.querySelector('.fmt-bar button[data-cmd="highlight"]'));
+    app.click(node.querySelector('.fmt-bar button[data-cmd="fontSizeUp"]'));
     await tick(20);
 
     const gk = grich.dataset.gk, sk = grich.dataset.sk;

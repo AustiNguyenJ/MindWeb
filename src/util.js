@@ -1,6 +1,6 @@
 import rangy from "rangy";
 import "rangy/lib/rangy-selectionsaverestore";
-import { RICH_OK_TAGS, RICH_DROP_TAGS, RICH_STYLE_PROPS, FONT_SIZES, HIGHLIGHT_COLOR, COLOR_DARK_MAP } from "./constants.js";
+import { RICH_OK_TAGS, RICH_DROP_TAGS, RICH_STYLE_PROPS, FONT_SIZES, COLOR_DARK_MAP } from "./constants.js";
 
 /* Small helpers: ids, HTML escaping and sanitising, rich-text coercion, URL
    handling, and a couple of DOM predicates. Nothing here reads application
@@ -106,11 +106,11 @@ function unwrapBareSpans(root){
   });
 }
 /* Apply (or, when value is falsy, clear) one inline style property across the
-   current selection inside `target`. This is how the font-size and highlight
-   controls work -- execCommand has no reliable cross-browser command for
-   either, so they wrap/unwrap a <span style="..."> by hand. Any pre-existing
-   value for the same property is stripped from the selected content first,
-   since a nested element's inline style would otherwise keep winning the CSS
+   current selection inside `target`. This is how the font-size control
+   works -- execCommand has no reliable cross-browser command for it, so it
+   wraps/unwraps a <span style="..."> by hand. Any pre-existing value for the
+   same property is stripped from the selected content first, since a
+   nested element's inline style would otherwise keep winning the CSS
    cascade over whatever we just wrapped it in.
 
    extractContents()/insertNode() below don't just move text around -- they
@@ -118,12 +118,11 @@ function unwrapBareSpans(root){
    plain "build a new Range around whatever we just inserted" approach (what
    this used to do) gets subtly wrong often enough to matter in practice: the
    caret ends up at the very start of the field instead of on the formatted
-   text, breaking a second shortcut press on the same selection and chained
-   formatting (highlight then resize). rangy's save/restore drops invisible
-   marker elements at the selection's boundaries before the mutation and
-   finds them again after, which survives this kind of DOM surgery by
-   design -- the one thing here worth a dependency for rather than
-   hand-rolling a second time. */
+   text, breaking a second shortcut press on the same selection. rangy's
+   save/restore drops invisible marker elements at the selection's
+   boundaries before the mutation and finds them again after, which survives
+   this kind of DOM surgery by design -- the one thing here worth a
+   dependency for rather than hand-rolling a second time. */
 export function applyInlineStyleToSelection(target, prop, value){
   const sel = window.getSelection();
   if(!sel || sel.rangeCount===0 || sel.isCollapsed) return false;
@@ -156,39 +155,6 @@ function firstSelectedNode(range){
   const c = range.startContainer;
   return (c.nodeType===1 && c.childNodes[range.startOffset]) ? c.childNodes[range.startOffset] : c;
 }
-/* Same idea from the other end of the range -- the end boundary's own
-   child-index points one *past* the last selected child, so the node to
-   descend to is at endOffset-1, not endOffset. */
-function lastSelectedNode(range){
-  const c = range.endContainer;
-  return (c.nodeType===1 && range.endOffset>0) ? c.childNodes[range.endOffset-1] : c;
-}
-function hasPropAt(node, target, prop){
-  let cur = node;
-  if(cur.nodeType!==1) cur = cur.parentElement;
-  while(cur && cur!==target.parentElement){
-    if(cur.style && cur.style.getPropertyValue(prop)) return true;
-    cur = cur.parentElement;
-  }
-  return false;
-}
-/* True if background-color is already set at either end of the selection --
-   used so a repeat Highlight press (or shortcut) turns the highlight back
-   off instead of only ever adding more of it. Checking both ends, not just
-   the start, matters because a selection landing exactly on a boundary
-   between highlighted and plain content can resolve its start to the wrong
-   side of that boundary; this is still a heuristic for a
-   partially-highlighted selection, same tradeoff execCommand's own toggle
-   commands make. */
-function selectionHasProp(range, target, prop){
-  return hasPropAt(firstSelectedNode(range), target, prop) || hasPropAt(lastSelectedNode(range), target, prop);
-}
-export function toggleHighlight(target, color){
-  const sel = window.getSelection();
-  if(!sel || sel.rangeCount===0 || sel.isCollapsed) return false;
-  const on = selectionHasProp(sel.getRangeAt(0), target, "background-color");
-  return applyInlineStyleToSelection(target, "background-color", on ? null : color);
-}
 /* Step the selection's font size up/down through FONT_SIZES. With nothing
    explicitly set yet, 13 (the app's base text size) is the implicit current
    step, so the first press moves to its neighbour rather than jumping from
@@ -220,12 +186,9 @@ export function stepFontSize(target, delta){
    action: that default isn't trustworthy across browsers (Firefox rebinds
    plain Ctrl/Cmd+B to toggling its Bookmarks sidebar at the chrome level
    instead of bolding text), so we preventDefault() and run execCommand
-   ourselves, same as the no-native-binding shortcuts below. Ctrl/Cmd+H is
-   also a browser chrome shortcut (History, in both Firefox and Chrome) --
-   same fix applies: preventDefault() here takes precedence over it, the
-   same way it already does for Ctrl+B. Pure key-combo matching, no DOM
-   access, so it's cheap to call from every keydown handler regardless of
-   which rich area is focused. */
+   ourselves, same as the no-native-binding shortcuts below. Pure key-combo
+   matching, no DOM access, so it's cheap to call from every keydown handler
+   regardless of which rich area is focused. */
 export function richShortcutCommand(e){
   if(!(e.ctrlKey||e.metaKey)) return null;
   const k = e.key.toLowerCase();
@@ -233,7 +196,6 @@ export function richShortcutCommand(e){
     if(k==="b") return "bold";
     if(k==="i") return "italic";
     if(k==="u") return "underline";
-    if(k==="h") return "highlightToggle";
     return null;
   }
   if(k==="x") return "strikeThrough";
@@ -262,15 +224,13 @@ export function handleRichShortcut(e, target, commit){
     if(clean !== target.innerHTML) target.innerHTML = clean;
     commit(clean);
   } else {
-    // highlight/font-size only ever wrap/unwrap a <span style="..."> whose
-    // one property comes from HIGHLIGHT_COLOR or FONT_SIZES -- never from
-    // user input -- so there's nothing here for sanitizeHtml to catch, and
-    // running it anyway would reassign innerHTML on every press (its output
-    // never textually matches the DOM's own CSSOM style serialization) and
-    // collapse the selection the same way the execCommand branch above
-    // guards against.
-    if(cmd==="highlightToggle") toggleHighlight(target, HIGHLIGHT_COLOR);
-    else if(cmd==="fontSizeUp") stepFontSize(target, 1);
+    // font-size only ever wraps/unwraps a <span style="..."> whose one
+    // property comes from FONT_SIZES -- never from user input -- so there's
+    // nothing here for sanitizeHtml to catch, and running it anyway would
+    // reassign innerHTML on every press (its output never textually matches
+    // the DOM's own CSSOM style serialization) and collapse the selection
+    // the same way the execCommand branch above guards against.
+    if(cmd==="fontSizeUp") stepFontSize(target, 1);
     else if(cmd==="fontSizeDown") stepFontSize(target, -1);
     commit(target.innerHTML);
   }
