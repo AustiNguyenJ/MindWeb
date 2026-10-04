@@ -1,5 +1,5 @@
 import { state } from "./state.js";
-import { COLORS, COPY_ICON } from "./constants.js";
+import { COLORS, COPY_ICON, HIGHLIGHT_COLOR } from "./constants.js";
 import {
   escapeHtml,
   escapeAttr,
@@ -8,6 +8,10 @@ import {
   normalizeUrl,
   openLinkBackground,
   themedNodeColor,
+  applyInlineStyleToSelection,
+  toggleHighlight,
+  stepFontSize,
+  handleRichShortcut,
 } from "./util.js";
 import { canvasInner, imgFileInput } from "./dom.js";
 import { copyText } from "./clipboard.js";
@@ -117,14 +121,22 @@ export function nodeElement(node){
       (f.kind==="group" && (f.subfields||[]).some(sf=>sf.kind==="richtext" || sf.kind==="longtext"))));
   const fmtBar = hasRich
     ? '<div class="fmt-bar">' +
-        '<button data-cmd="bold" title="Bold"><b>B</b></button>' +
-        '<button data-cmd="italic" title="Italic"><i>I</i></button>' +
+        '<button data-cmd="bold" title="Bold (Ctrl+B)"><b>B</b></button>' +
+        '<button data-cmd="italic" title="Italic (Ctrl+I)"><i>I</i></button>' +
+        '<button data-cmd="underline" title="Underline (Ctrl+U)"><u>U</u></button>' +
+        '<button data-cmd="strikeThrough" title="Strikethrough (Ctrl+Shift+X)"><s>S</s></button>' +
+        '<span class="sep"></span>' +
+        '<button data-cmd="fontSizeDown" title="Shrink text (Ctrl+Shift+[)">A\u207b</button>' +
+        '<button data-cmd="fontSizeUp" title="Grow text (Ctrl+Shift+])">A\u207a</button>' +
         '<span class="sep"></span>' +
         '<button data-cmd="insertUnorderedList" title="Bulleted list">\u2022 \u2013</button>' +
         '<button data-cmd="insertOrderedList" title="Numbered list">1.</button>' +
         '<span class="sep"></span>' +
         '<button data-cmd="createLink" title="Add link">Link</button>' +
         '<button data-cmd="unlink" title="Remove link">\u2717</button>' +
+        '<span class="sep"></span>' +
+        '<button class="fmt-hl" data-cmd="highlight" title="Highlight (Ctrl+Shift+H)">H</button>' +
+        '<button data-cmd="removeHighlight" title="Remove highlight">H\u2717</button>' +
         '<span class="sep"></span>' +
         '<button data-cmd="copytext" title="Copy this text">'+COPY_ICON+'</button>' +
       '</div>'
@@ -242,6 +254,16 @@ export function nodeElement(node){
         openLinkBackground(a.href);
       }
     });
+    // bold/italic/underline/undo already work natively via the browser's own
+    // Ctrl/Cmd+B/I/U -- this only covers the formatting that has no native
+    // contenteditable binding (strikethrough, highlight, grow/shrink font).
+    rich.addEventListener("keydown",(e)=>{
+      handleRichShortcut(e, rich, (clean)=>{
+        node.bodyHtml = clean;
+        node.body = richToText(clean);
+        queueBoardSave(state.currentBoardId);
+      });
+    });
   }
 
   /* format toolbar: acts on whichever rich area was last focused in this box */
@@ -258,19 +280,25 @@ export function nodeElement(node){
       target.focus();
       const cmd = btn.dataset.cmd;
       if(cmd==="copytext"){ copyText(richToText(target.innerHTML), btn); return; }
-      try{ document.execCommand("styleWithCSS", false, false); }catch(err){}
-      if(cmd==="createLink"){
-        const sel = window.getSelection();
-        const hasSel = sel && sel.toString().trim().length;
-        const url = normalizeUrl(prompt("Link URL:", "https://") || "");
-        if(!url) return;
-        if(hasSel){ document.execCommand("createLink", false, url); }
-        else {
-          document.execCommand("insertHTML", false,
-            '<a href="'+escapeAttr(url)+'" target="_blank" rel="noopener noreferrer">'+escapeHtml(url)+'</a>&nbsp;');
+      if(cmd==="fontSizeUp"){ stepFontSize(target, 1); }
+      else if(cmd==="fontSizeDown"){ stepFontSize(target, -1); }
+      else if(cmd==="highlight"){ toggleHighlight(target, HIGHLIGHT_COLOR); }
+      else if(cmd==="removeHighlight"){ applyInlineStyleToSelection(target, "background-color", null); }
+      else {
+        try{ document.execCommand("styleWithCSS", false, false); }catch(err){}
+        if(cmd==="createLink"){
+          const sel = window.getSelection();
+          const hasSel = sel && sel.toString().trim().length;
+          const url = normalizeUrl(prompt("Link URL:", "https://") || "");
+          if(!url) return;
+          if(hasSel){ document.execCommand("createLink", false, url); }
+          else {
+            document.execCommand("insertHTML", false,
+              '<a href="'+escapeAttr(url)+'" target="_blank" rel="noopener noreferrer">'+escapeHtml(url)+'</a>&nbsp;');
+          }
+        } else {
+          document.execCommand(cmd, false, null);
         }
-      } else {
-        document.execCommand(cmd, false, null);
       }
       const clean = sanitizeHtml(target.innerHTML);
       target.innerHTML = clean;

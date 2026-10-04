@@ -1,5 +1,10 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { createApp, exportJson, tick } from "./harness.js";
+import { createApp, exportJson, tick, DEFAULT_ENTRY } from "./harness.js";
+
+// the richer formatting bar (underline, strikethrough, font size, highlight)
+// is new, app-only behavior -- the untouched original only ever had the
+// seven commands checked below
+const onBaseline = DEFAULT_ENTRY.includes("original");
 
 let app;
 beforeEach(async () => { app = await createApp(); });
@@ -77,9 +82,85 @@ describe("the formatting bar", () => {
   it("appears only on the selected block", () => {
     const body = noteBody();
     expect(app.$(".node.type-note .fmt-bar")).toBeTruthy();
-    expect(app.$$(".node.type-note .fmt-bar button[data-cmd]").map((b) => b.dataset.cmd))
-      .toEqual(["bold", "italic", "insertUnorderedList", "insertOrderedList", "createLink", "unlink", "copytext"]);
     expect(body).toBeTruthy();
+  });
+
+  it.skipIf(onBaseline)("offers the full set of formatting commands", () => {
+    noteBody();
+    expect(app.$$(".node.type-note .fmt-bar button[data-cmd]").map((b) => b.dataset.cmd)).toEqual([
+      "bold", "italic", "underline", "strikeThrough",
+      "fontSizeDown", "fontSizeUp",
+      "insertUnorderedList", "insertOrderedList",
+      "createLink", "unlink",
+      "highlight", "removeHighlight",
+      "copytext",
+    ]);
+  });
+
+  function selectAllText(win, el) {
+    const range = win.document.createRange();
+    range.selectNodeContents(el);
+    const sel = win.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }
+
+  it.skipIf(onBaseline)("highlights selected text from the toolbar", () => {
+    const body = noteBody();
+    app.typeRich(body, "highlight me");
+    app.focus(body);
+    selectAllText(app.window, body);
+    app.click(app.$('.node.type-note .fmt-bar button[data-cmd="highlight"]'));
+
+    const span = app.$(".node.type-note .cf-rich span");
+    expect(span).toBeTruthy();
+    expect(span.style.backgroundColor).toBeTruthy();
+    expect(span.textContent).toBe("highlight me");
+  });
+
+  it.skipIf(onBaseline)("removes an existing highlight from the toolbar", () => {
+    const body = noteBody();
+    app.typeRich(body, '<span style="background-color:#ffeb3b66">highlight me</span>');
+    app.focus(body);
+    selectAllText(app.window, body);
+    app.click(app.$('.node.type-note .fmt-bar button[data-cmd="removeHighlight"]'));
+    expect(app.$(".node.type-note .cf-rich span")).toBeNull();
+  });
+
+  it.skipIf(onBaseline)("survives sanitizing on blur", () => {
+    const body = noteBody();
+    app.typeRich(body, "highlight me");
+    app.focus(body);
+    selectAllText(app.window, body);
+    app.click(app.$('.node.type-note .fmt-bar button[data-cmd="highlight"]'));
+    app.blur(app.$(".node.type-note .cf-rich"));
+
+    const span = app.$(".node.type-note .cf-rich span");
+    expect(span).toBeTruthy();
+    expect(span.style.backgroundColor).toBeTruthy();
+  });
+
+  it.skipIf(onBaseline)("grows the selected text's font size", () => {
+    const body = noteBody();
+    app.typeRich(body, "resize me");
+    app.focus(body);
+    selectAllText(app.window, body);
+    app.click(app.$('.node.type-note .fmt-bar button[data-cmd="fontSizeUp"]'));
+
+    const span = app.$(".node.type-note .cf-rich span");
+    expect(span.style.fontSize).toBe("16px");
+  });
+
+  it.skipIf(onBaseline)("toggles highlight with Ctrl+Shift+H", () => {
+    const body = noteBody();
+    app.typeRich(body, "shortcut me");
+    app.focus(body);
+    selectAllText(app.window, body);
+    app.key(body, "H", { ctrlKey: true, shiftKey: true });
+
+    const span = app.$(".node.type-note .cf-rich span");
+    expect(span).toBeTruthy();
+    expect(span.style.backgroundColor).toBeTruthy();
   });
 
   it("inserts a link from the prompt when nothing is selected", () => {

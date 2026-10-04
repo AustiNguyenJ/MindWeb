@@ -7,6 +7,7 @@ import {
   richToText,
   sanitizeHtml,
   openLinkBackground,
+  handleRichShortcut,
 } from "./util.js";
 import { copyText, copyBtnHtml } from "./clipboard.js";
 import { fieldVal, setFieldVal } from "./blockTypes.js";
@@ -170,6 +171,9 @@ export function wireCustomFields(div, node){
         const txt = e.clipboardData ? e.clipboardData.getData("text/plain") : "";
         if(txt){ e.preventDefault(); e.stopPropagation(); document.execCommand("insertText", false, txt); }
       });
+      fld.addEventListener("keydown",(e)=>{
+        handleRichShortcut(e, fld, (clean)=>{ setFieldVal(node, key, clean); queueBoardSave(state.currentBoardId); });
+      });
     } else if(fld.type==="checkbox"){
       fld.addEventListener("change", ()=>{ setFieldVal(node, key, fld.checked); queueBoardSave(state.currentBoardId); });
     } else if(fld.tagName==="TEXTAREA"){
@@ -227,6 +231,12 @@ export function wireCustomFields(div, node){
       fld.addEventListener("paste",(e)=>{
         const txt = e.clipboardData ? e.clipboardData.getData("text/plain") : "";
         if(txt){ e.preventDefault(); e.stopPropagation(); document.execCommand("insertText", false, txt); }
+      });
+      fld.addEventListener("keydown",(e)=>{
+        handleRichShortcut(e, fld, (clean)=>{
+          commit(clean);
+          measureListOffsets(); updateConnectionsTouching(node.id);
+        });
       });
     } else if(fld.type==="checkbox"){
       fld.addEventListener("change", ()=>commit(fld.checked));
