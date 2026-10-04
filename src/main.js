@@ -46,6 +46,7 @@ import { initKeyboard } from "./keyboard.js";
 import { initDesigner, renderTypeToolbar } from "./designer.js";
 import { initHelp } from "./help.js";
 import { initTheme } from "./theme.js";
+import { initPanelResize } from "./panelResize.js";
 import { initAuthGate, requireCloudAuth, waitForCloudData } from "./cloud.js";
 import { initConfirmModal } from "./confirmModal.js";
 import { initFooterBar } from "./footer.js";
@@ -144,6 +145,7 @@ window.addEventListener("beforeunload",(e)=>{
   initToolbarSettings();
   initHelp();
   initTheme();
+  initPanelResize();
   initAuthGate();
   initFooterBar();
 

@@ -205,6 +205,11 @@
   kbd{font-family:var(--mono);font-size:10px;background:var(--bg);border:1px solid var(--line);
     border-radius:4px;padding:1px 4px;color:var(--ink);}
 
+  .panel-resize-handle{width:6px;flex:none;cursor:col-resize;position:relative;}
+  .panel-resize-handle::after{content:'';position:absolute;top:0;bottom:0;left:50%;width:1px;
+    background:var(--line);transform:translateX(-50%);}
+  .panel-resize-handle:hover::after, .panel-resize-handle.active::after{background:var(--accent);width:2px;}
+
   #main{flex:1;display:flex;flex-direction:column;min-width:0;}
   #boardHeader{display:flex;align-items:flex-start;gap:16px;padding:18px 24px 10px;
     border-bottom:1px solid var(--line);background:var(--sidebar);}
