@@ -156,19 +156,32 @@ function firstSelectedNode(range){
   const c = range.startContainer;
   return (c.nodeType===1 && c.childNodes[range.startOffset]) ? c.childNodes[range.startOffset] : c;
 }
-/* True if background-color is already set somewhere at or above the
-   selection's own position -- used so a repeat Highlight press (or
-   shortcut) turns the highlight back off instead of only ever adding more
-   of it. A heuristic for a partially-highlighted selection, same tradeoff
-   execCommand's own toggle commands make. */
-function selectionHasProp(range, target, prop){
-  let cur = firstSelectedNode(range);
+/* Same idea from the other end of the range -- the end boundary's own
+   child-index points one *past* the last selected child, so the node to
+   descend to is at endOffset-1, not endOffset. */
+function lastSelectedNode(range){
+  const c = range.endContainer;
+  return (c.nodeType===1 && range.endOffset>0) ? c.childNodes[range.endOffset-1] : c;
+}
+function hasPropAt(node, target, prop){
+  let cur = node;
   if(cur.nodeType!==1) cur = cur.parentElement;
   while(cur && cur!==target.parentElement){
     if(cur.style && cur.style.getPropertyValue(prop)) return true;
     cur = cur.parentElement;
   }
   return false;
+}
+/* True if background-color is already set at either end of the selection --
+   used so a repeat Highlight press (or shortcut) turns the highlight back
+   off instead of only ever adding more of it. Checking both ends, not just
+   the start, matters because a selection landing exactly on a boundary
+   between highlighted and plain content can resolve its start to the wrong
+   side of that boundary; this is still a heuristic for a
+   partially-highlighted selection, same tradeoff execCommand's own toggle
+   commands make. */
+function selectionHasProp(range, target, prop){
+  return hasPropAt(firstSelectedNode(range), target, prop) || hasPropAt(lastSelectedNode(range), target, prop);
 }
 export function toggleHighlight(target, color){
   const sel = window.getSelection();
@@ -207,9 +220,12 @@ export function stepFontSize(target, delta){
    action: that default isn't trustworthy across browsers (Firefox rebinds
    plain Ctrl/Cmd+B to toggling its Bookmarks sidebar at the chrome level
    instead of bolding text), so we preventDefault() and run execCommand
-   ourselves, same as the no-native-binding shortcuts below. Pure key-combo
-   matching, no DOM access, so it's cheap to call from every keydown handler
-   regardless of which rich area is focused. */
+   ourselves, same as the no-native-binding shortcuts below. Ctrl/Cmd+H is
+   also a browser chrome shortcut (History, in both Firefox and Chrome) --
+   same fix applies: preventDefault() here takes precedence over it, the
+   same way it already does for Ctrl+B. Pure key-combo matching, no DOM
+   access, so it's cheap to call from every keydown handler regardless of
+   which rich area is focused. */
 export function richShortcutCommand(e){
   if(!(e.ctrlKey||e.metaKey)) return null;
   const k = e.key.toLowerCase();
@@ -217,10 +233,10 @@ export function richShortcutCommand(e){
     if(k==="b") return "bold";
     if(k==="i") return "italic";
     if(k==="u") return "underline";
+    if(k==="h") return "highlightToggle";
     return null;
   }
   if(k==="x") return "strikeThrough";
-  if(k==="h") return "highlightToggle";
   if(k==="]" || k==="}") return "fontSizeUp";
   if(k==="[" || k==="{") return "fontSizeDown";
   return null;

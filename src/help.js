@@ -47,7 +47,7 @@ const STATIC_SECTIONS = [
     '<h3>Formatting</h3>' +
     '<p>Select a box to reveal its formatting bar: bold, italic, underline, strikethrough, grow/shrink text, bullet and numbered lists, highlight, and links. Pasting a bare URL turns it into a link automatically. <kbd>Ctrl</kbd>+click any link to open it.</p>' +
     '<p>While typing in a box, the usual shortcuts work: <kbd>Ctrl</kbd>+<kbd>B</kbd> bold, <kbd>Ctrl</kbd>+<kbd>I</kbd> italic, <kbd>Ctrl</kbd>+<kbd>U</kbd> underline. ' +
-    '<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>X</kbd> strikethrough, <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>H</kbd> toggles highlight, and <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>]</kbd> / <kbd>[</kbd> grow or shrink the selected text.</p>'
+    '<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>X</kbd> strikethrough, <kbd>Ctrl</kbd>+<kbd>H</kbd> toggles highlight, and <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>]</kbd> / <kbd>[</kbd> grow or shrink the selected text.</p>'
   },
   { id:"connecting", title:"Connecting", html:
     '<h3>Connecting</h3>' +

@@ -142,6 +142,28 @@ describe("the formatting bar", () => {
     expect(app.$(".node.type-note .cf-rich span")).toBeNull();
   });
 
+  it.skipIf(onBaseline)("removes a pre-existing highlight with the Ctrl+H shortcut", () => {
+    const body = noteBody();
+    app.typeRich(body, '<span style="background-color:#ffeb3b66">highlight me</span>');
+    app.focus(body);
+    selectAllText(app.window, body);
+    app.key(body, "h", { ctrlKey: true });
+
+    expect(app.$(".node.type-note .cf-rich span")).toBeNull();
+  });
+
+  it.skipIf(onBaseline)("leaves no stray rangy marker behind after removing a highlight", () => {
+    const body = noteBody();
+    app.typeRich(body, '<span style="background-color:#ffeb3b66">highlight me</span>');
+    app.focus(body);
+    selectAllText(app.window, body);
+    app.click(app.$('.node.type-note .fmt-bar button[data-cmd="removeHighlight"]'));
+
+    const html = app.$(".node.type-note .cf-rich").innerHTML;
+    expect(html).not.toMatch(/rangySelectionBoundary|selectionBoundary_/);
+    expect(html).toBe("highlight me");
+  });
+
   it.skipIf(onBaseline)("survives sanitizing on blur", () => {
     const body = noteBody();
     app.typeRich(body, "highlight me");
@@ -209,12 +231,12 @@ describe("the formatting bar", () => {
     expect(app.window.getSelection().isCollapsed).toBe(false);
   });
 
-  it.skipIf(onBaseline)("toggles highlight with Ctrl+Shift+H", () => {
+  it.skipIf(onBaseline)("toggles highlight with Ctrl+H", () => {
     const body = noteBody();
     app.typeRich(body, "shortcut me");
     app.focus(body);
     selectAllText(app.window, body);
-    app.key(body, "H", { ctrlKey: true, shiftKey: true });
+    app.key(body, "h", { ctrlKey: true });
 
     const span = app.$(".node.type-note .cf-rich span");
     expect(span).toBeTruthy();

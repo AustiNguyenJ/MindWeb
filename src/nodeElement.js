@@ -135,7 +135,7 @@ export function nodeElement(node){
         '<button data-cmd="createLink" title="Add link">Link</button>' +
         '<button data-cmd="unlink" title="Remove link">\u2717</button>' +
         '<span class="sep"></span>' +
-        '<button class="fmt-hl" data-cmd="highlight" title="Highlight (Ctrl+Shift+H)">H</button>' +
+        '<button class="fmt-hl" data-cmd="highlight" title="Highlight (Ctrl+H)">H</button>' +
         '<button data-cmd="removeHighlight" title="Remove highlight">H\u2717</button>' +
         '<span class="sep"></span>' +
         '<button data-cmd="copytext" title="Copy this text">'+COPY_ICON+'</button>' +
