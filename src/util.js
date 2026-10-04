@@ -178,13 +178,23 @@ export function stepFontSize(target, delta){
   const next = FONT_SIZES[idx];
   return applyInlineStyleToSelection(target, "font-size", next===13 ? null : next+"px");
 }
-/* Keyboard shortcuts for the formatting that has no native contenteditable
-   binding (bold/italic/underline already work via the browser's own
-   Ctrl/Cmd+B/I/U). Pure key-combo matching, no DOM access, so it's cheap to
-   call from every keydown handler regardless of which rich area is focused. */
+/* Keyboard shortcuts for rich-text formatting. Bold/italic/underline are
+   handled explicitly here rather than left to the browser's own default
+   action: that default isn't trustworthy across browsers (Firefox rebinds
+   plain Ctrl/Cmd+B to toggling its Bookmarks sidebar at the chrome level
+   instead of bolding text), so we preventDefault() and run execCommand
+   ourselves, same as the no-native-binding shortcuts below. Pure key-combo
+   matching, no DOM access, so it's cheap to call from every keydown handler
+   regardless of which rich area is focused. */
 export function richShortcutCommand(e){
-  if(!(e.ctrlKey||e.metaKey) || !e.shiftKey) return null;
+  if(!(e.ctrlKey||e.metaKey)) return null;
   const k = e.key.toLowerCase();
+  if(!e.shiftKey){
+    if(k==="b") return "bold";
+    if(k==="i") return "italic";
+    if(k==="u") return "underline";
+    return null;
+  }
   if(k==="x") return "strikeThrough";
   if(k==="h") return "highlightToggle";
   if(k==="]" || k==="}") return "fontSizeUp";
@@ -195,25 +205,35 @@ export function richShortcutCommand(e){
    hand the clean HTML to `commit` -- the one piece that differs between a
    node's own body, a custom field, and a repeating-group subfield. Returns
    whether a shortcut matched, so the caller only preventDefault()s and keeps
-   the browser's native shortcuts (bold/italic/underline/undo) working. */
+   the browser's native undo shortcut working. */
 export function handleRichShortcut(e, target, commit){
   const cmd = richShortcutCommand(e);
   if(!cmd) return false;
   e.preventDefault();
-  if(cmd==="strikeThrough"){
+  if(cmd==="strikeThrough" || cmd==="bold" || cmd==="italic" || cmd==="underline"){
     target.focus();
     try{ document.execCommand("styleWithCSS", false, false); }catch(err){}
-    document.execCommand("strikeThrough", false, null);
-  } else if(cmd==="highlightToggle"){
-    toggleHighlight(target, HIGHLIGHT_COLOR);
-  } else if(cmd==="fontSizeUp"){
-    stepFontSize(target, 1);
-  } else if(cmd==="fontSizeDown"){
-    stepFontSize(target, -1);
+    document.execCommand(cmd, false, null);
+    // execCommand is the browser's own doing, so re-sanitize its output --
+    // but only reassign innerHTML if that actually changed anything, or the
+    // reassignment collapses the very selection the user is about to apply
+    // a second shortcut to.
+    const clean = sanitizeHtml(target.innerHTML);
+    if(clean !== target.innerHTML) target.innerHTML = clean;
+    commit(clean);
+  } else {
+    // highlight/font-size only ever wrap/unwrap a <span style="..."> whose
+    // one property comes from HIGHLIGHT_COLOR or FONT_SIZES -- never from
+    // user input -- so there's nothing here for sanitizeHtml to catch, and
+    // running it anyway would reassign innerHTML on every press (its output
+    // never textually matches the DOM's own CSSOM style serialization) and
+    // collapse the selection the same way the execCommand branch above
+    // guards against.
+    if(cmd==="highlightToggle") toggleHighlight(target, HIGHLIGHT_COLOR);
+    else if(cmd==="fontSizeUp") stepFontSize(target, 1);
+    else if(cmd==="fontSizeDown") stepFontSize(target, -1);
+    commit(target.innerHTML);
   }
-  const clean = sanitizeHtml(target.innerHTML);
-  target.innerHTML = clean;
-  commit(clean);
   return true;
 }
 export function normalizeUrl(u){

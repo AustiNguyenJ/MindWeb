@@ -254,9 +254,11 @@ export function nodeElement(node){
         openLinkBackground(a.href);
       }
     });
-    // bold/italic/underline/undo already work natively via the browser's own
-    // Ctrl/Cmd+B/I/U -- this only covers the formatting that has no native
-    // contenteditable binding (strikethrough, highlight, grow/shrink font).
+    // Undo still works natively. Bold/italic/underline are handled explicitly
+    // here (same as strikethrough/highlight/grow-shrink font below) rather
+    // than left to the browser's own Ctrl/Cmd+B/I/U default, because that
+    // default isn't trustworthy across browsers -- e.g. Firefox rebinds
+    // plain Ctrl/Cmd+B to toggling its Bookmarks sidebar at the chrome level.
     rich.addEventListener("keydown",(e)=>{
       handleRichShortcut(e, rich, (clean)=>{
         node.bodyHtml = clean;
@@ -280,11 +282,20 @@ export function nodeElement(node){
       target.focus();
       const cmd = btn.dataset.cmd;
       if(cmd==="copytext"){ copyText(richToText(target.innerHTML), btn); return; }
-      if(cmd==="fontSizeUp"){ stepFontSize(target, 1); }
-      else if(cmd==="fontSizeDown"){ stepFontSize(target, -1); }
-      else if(cmd==="highlight"){ toggleHighlight(target, HIGHLIGHT_COLOR); }
-      else if(cmd==="removeHighlight"){ applyInlineStyleToSelection(target, "background-color", null); }
-      else {
+      let clean;
+      if(cmd==="fontSizeUp" || cmd==="fontSizeDown" || cmd==="highlight" || cmd==="removeHighlight"){
+        // these only ever wrap/unwrap a <span style="..."> whose one property
+        // comes from HIGHLIGHT_COLOR or FONT_SIZES, never from user input --
+        // nothing for sanitizeHtml to catch, and running it anyway would
+        // reassign innerHTML on every click (its output never textually
+        // matches the DOM's own CSSOM style serialization) and collapse the
+        // selection a follow-up click needs.
+        if(cmd==="fontSizeUp") stepFontSize(target, 1);
+        else if(cmd==="fontSizeDown") stepFontSize(target, -1);
+        else if(cmd==="highlight") toggleHighlight(target, HIGHLIGHT_COLOR);
+        else applyInlineStyleToSelection(target, "background-color", null);
+        clean = target.innerHTML;
+      } else {
         try{ document.execCommand("styleWithCSS", false, false); }catch(err){}
         if(cmd==="createLink"){
           const sel = window.getSelection();
@@ -299,11 +310,17 @@ export function nodeElement(node){
         } else {
           document.execCommand(cmd, false, null);
         }
+        clean = sanitizeHtml(target.innerHTML);
+        if(clean !== target.innerHTML) target.innerHTML = clean;
       }
-      const clean = sanitizeHtml(target.innerHTML);
-      target.innerHTML = clean;
-      // write back to the correct place: node-rich -> bodyHtml, cf-rich -> its field
-      if(target.classList.contains("cf-rich")){
+      // write back to the correct place: node-rich -> bodyHtml, grich -> its group row, cf-rich -> its field
+      if(target.classList.contains("grich")){
+        const gk = target.dataset.gk, ri = parseInt(target.dataset.ri, 10), sk = target.dataset.sk;
+        const rows = node.fields[gk];
+        if(rows && rows[ri]) rows[ri][sk] = clean;
+        measureListOffsets();
+        updateConnectionsTouching(node.id);
+      } else if(target.classList.contains("cf-rich")){
         setFieldVal(node, target.dataset.fk, clean);
       } else {
         node.bodyHtml = clean;

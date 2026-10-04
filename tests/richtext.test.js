@@ -151,6 +151,33 @@ describe("the formatting bar", () => {
     expect(span.style.fontSize).toBe("16px");
   });
 
+  it.skipIf(onBaseline)("does not collapse the selection when a toolbar command leaves the content unchanged", () => {
+    const body = noteBody();
+    app.typeRich(body, "resize me");
+    app.focus(body);
+    selectAllText(app.window, body);
+    app.click(app.$('.node.type-note .fmt-bar button[data-cmd="bold"]'));
+
+    // the command already mutated the live DOM (or, as in jsdom, left it
+    // untouched) before this handler sanitizes and writes back -- an
+    // unconditional innerHTML reassignment here would collapse the
+    // selection even though nothing actually changed
+    expect(app.window.getSelection().isCollapsed).toBe(false);
+  });
+
+  it.skipIf(onBaseline)("keeps the selection alive across a second shortcut press", () => {
+    const body = noteBody();
+    app.typeRich(body, "shortcut me");
+    app.focus(body);
+    selectAllText(app.window, body);
+    app.key(body, "b", { ctrlKey: true });
+
+    expect(app.window.getSelection().isCollapsed).toBe(false);
+
+    app.key(body, "i", { ctrlKey: true });
+    expect(app.window.getSelection().isCollapsed).toBe(false);
+  });
+
   it.skipIf(onBaseline)("toggles highlight with Ctrl+Shift+H", () => {
     const body = noteBody();
     app.typeRich(body, "shortcut me");
@@ -161,6 +188,24 @@ describe("the formatting bar", () => {
     const span = app.$(".node.type-note .cf-rich span");
     expect(span).toBeTruthy();
     expect(span.style.backgroundColor).toBeTruthy();
+  });
+
+  it.skipIf(onBaseline)("prevents the default action for Ctrl+B/I/U so the browser can't hijack them", () => {
+    const body = noteBody();
+    app.focus(body);
+
+    expect(app.key(body, "b", { ctrlKey: true })).toBe(false);
+    expect(app.key(body, "i", { ctrlKey: true })).toBe(false);
+    expect(app.key(body, "u", { ctrlKey: true })).toBe(false);
+  });
+
+  it.skipIf(onBaseline)("does not prevent plain b/i/u typing", () => {
+    const body = noteBody();
+    app.focus(body);
+
+    expect(app.key(body, "b")).toBe(true);
+    expect(app.key(body, "i")).toBe(true);
+    expect(app.key(body, "u")).toBe(true);
   });
 
   it("inserts a link from the prompt when nothing is selected", () => {
@@ -189,6 +234,47 @@ describe("the formatting bar", () => {
     app.click(app.$('.node.type-note .fmt-bar button[data-cmd="copytext"]'));
 
     expect(app.rec.copied[app.rec.copied.length - 1]).toBe("copy me");
+  });
+});
+
+describe.skipIf(onBaseline)("repeating-group rich subfields", () => {
+  function setSelect(el, value) {
+    el.value = value;
+    el.dispatchEvent(new app.window.Event("change", { bubbles: true }));
+  }
+
+  function selectAllText(win, el) {
+    const range = win.document.createRange();
+    range.selectNodeContents(el);
+    const sel = win.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }
+
+  it("writes toolbar edits to the row, not to node.fields.undefined", async () => {
+    app.click(app.$("#designBlocksBtn"));
+    app.click(app.$("#bdNewType"));
+    app.type(app.$("#bdName"), "Runbook");
+    setSelect(app.$("#bdFields .bd-fkind"), "group");
+    app.click(app.$("#bdDone"));
+
+    app.click(app.$("#customTypeBtns .add-btn"));
+    let node = app.$("#canvasInner .node:not(.type-header)");
+    app.click(node.querySelector(".grow-add"));
+    node = app.$("#canvasInner .node:not(.type-header)");
+
+    const grich = node.querySelector(".grich");
+    app.typeRich(grich, "highlight me");
+    app.focus(grich);
+    selectAllText(app.window, grich);
+    app.click(node.querySelector('.fmt-bar button[data-cmd="highlight"]'));
+    await tick(20);
+
+    const gk = grich.dataset.gk, sk = grich.dataset.sk;
+    const dump = await exportJson(app);
+    const n = dump.boards[0].nodes.find((x) => x.type.startsWith("ct_"));
+    expect(n.fields.undefined).toBeUndefined();
+    expect(n.fields[gk][0][sk]).toMatch(/<span/);
   });
 });
 
