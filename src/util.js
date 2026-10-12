@@ -77,11 +77,15 @@ export function richToText(html){
 }
 /* Coerce a stored field value into safe rich HTML. Values written by the old
    plain-text 'longtext' field have no markup, so we convert their newlines to
-   <br>; values already containing HTML are just sanitized. */
+   <br>; values already containing HTML are just sanitized. A contenteditable
+   stores a typed > < & as &gt; &lt; &amp; with no tag at all, so an entity
+   counts as HTML too -- otherwise that value is mistaken for legacy plain
+   text, re-escaped (showing literal "&gt;"), and compounds on every save. */
+const HTML_RE = /<[a-z][\s\S]*>|&(#\d+|#x[0-9a-f]+|[a-z][a-z0-9]*);/i;
+export function looksHtml(v){ return HTML_RE.test(v); }
 export function richValue(val){
   if(!val) return "";
-  const looksHtml = /<[a-z][\s\S]*>/i.test(val);
-  return looksHtml ? sanitizeHtml(val) : plainToHtml(val);
+  return looksHtml(val) ? sanitizeHtml(val) : plainToHtml(val);
 }
 function stripStyleProp(root, prop){
   if(root.nodeType===1 && root.style && root.style.getPropertyValue(prop)){
@@ -282,7 +286,7 @@ export function currentWeekLabel(){
 export function escapeHtml(s){ return (s||"").replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 export function escapeAttr(s){ return escapeHtml(s); }
 
-export function looksRich(v){ return typeof v==="string" && /<[a-z][\s\S]*>/i.test(v); }
+export function looksRich(v){ return typeof v==="string" && looksHtml(v); }
 
 /* True when focus is anywhere the user is typing, so canvas shortcuts stay
    out of the way. Checks the property, the attribute, and any editable

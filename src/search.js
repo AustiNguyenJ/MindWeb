@@ -1,6 +1,6 @@
 import { el, canvasInner, viewport } from "./dom.js";
 import { state } from "./state.js";
-import { escapeHtml, richToText } from "./util.js";
+import { escapeHtml, richToText, looksHtml } from "./util.js";
 import { getBoard, findNode } from "./boards.js";
 import { isCustomType } from "./blockTypes.js";
 import { applyTransform } from "./view.js";
@@ -81,7 +81,7 @@ export function nodeHaystack(n){
         return v.map(row=>row && typeof row==="object" ? Object.keys(row).map(sk=>{
           const sv = row[sk];
           if(typeof sv!=="string") return sv===true?"yes":"";
-          return /<[a-z][\s\S]*>/i.test(sv) ? richToText(sv) : sv;
+          return looksHtml(sv) ? richToText(sv) : sv;
         }).join(" ") : "").join(" ");
       }
       return typeof v==="string" ? richToText(v) : (v===true?"yes":"");
