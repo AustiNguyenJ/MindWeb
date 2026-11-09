@@ -88,8 +88,13 @@ export function createNode(type, cx, cy, opts){
 }
 
 export function focusNodeTitle(id){
-  const t = canvasInner.querySelector('.node[data-id="'+id+'"] .node-title');
-  if(t){ t.focus(); if(t.select) t.select(); }
+  const nodeEl = canvasInner.querySelector('.node[data-id="'+id+'"]');
+  if(!nodeEl) return;
+  const t = nodeEl.querySelector('.node-title');
+  if(t){ t.focus(); if(t.select) t.select(); return; }
+  // title area switched off for this type: land in the first body field instead
+  const f = nodeEl.querySelector('.node-rich, .cf-rich, textarea, input');
+  if(f) f.focus();
 }
 
 export function spawnAtCursor(type){

@@ -4,14 +4,9 @@ import { fsRead } from "./storage.js";
 
 /* Quick-access toolbar + hotkey configuration.
  *
- * One config shape is shared by the global default and any per-board
- * override: { order: [typeId,...], onBar: {typeId:bool}, hotkeys: {typeId:key} }.
- * A board opts into its own copy by setting boardsData[id].toolbarOverride;
- * otherwise it inherits the global state.toolbarConfig. Both are persisted
- * alongside the data they travel with -- the global config next to
- * block-types.json, the per-board copy inside that board's own file --
- * following the same split the codebase already uses for block types
- * (global) vs. board content (per-board).
+ * One global config, state.toolbarConfig, governs every page:
+ * { order: [typeId,...], onBar: {typeId:bool}, hotkeys: {typeId:key} },
+ * persisted next to block-types.json.
  */
 
 export function defaultToolbarConfig(){
@@ -51,16 +46,11 @@ export function toolbarEntries(){
   return list;
 }
 
-export function boardHasOverride(boardId){
-  const d = state.boardsData[boardId];
-  return !!(d && d.toolbarOverride);
-}
-
-/* The config that actually governs the current board: its own override if
-   it opted in, otherwise the shared global config. */
+/* The quick bar and hotkeys are one global config shared by every page, so an
+   edit shows up everywhere. (Pages used to be able to opt into their own copy;
+   any leftover per-board toolbarOverride/toolbarConfig in saved data is
+   ignored.) */
 export function resolvedToolbarConfig(){
-  const d = state.boardsData[state.currentBoardId];
-  if(d && d.toolbarOverride) return normalizeToolbarConfig(d.toolbarConfig);
   return state.toolbarConfig || defaultToolbarConfig();
 }
 

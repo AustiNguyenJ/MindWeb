@@ -1,46 +1,27 @@
 import { el } from "./dom.js";
 import { state } from "./state.js";
 import { escapeHtml, escapeAttr } from "./util.js";
-import { showToast } from "./toast.js";
 import {
   toolbarEntries,
   resolvedToolbarConfig,
-  normalizeToolbarConfig,
   defaultToolbarConfig,
-  boardHasOverride,
 } from "./toolbarConfig.js";
-import { queueToolbarConfigSave, queueBoardSave } from "./storage.js";
+import { queueToolbarConfigSave } from "./storage.js";
 import { renderQuickAccessToolbar } from "./toolbar.js";
 import { renderTypeToolbar } from "./designer.js";
 
 /* The Toolbar settings modal: which block types show as quick-access
-   buttons, and what single key (if any) spawns each. Edits go either to the
-   shared global config or, if the current board opted in, to that board's
-   own copy -- see toolbarConfig.js for how the two are resolved. */
+   buttons, and what single key (if any) spawns each. One shared config for
+   every page -- see toolbarConfig.js. Mutating it in place and re-rendering is
+   enough, since resolvedToolbarConfig() reads the same object. */
 
-/* The config object edits are written to right now: the current board's own
-   override if it has one, otherwise the shared global one. Mutating this in
-   place and re-rendering is enough, since resolvedToolbarConfig() reads the
-   same objects. */
 function editableConfig(){
-  if(boardHasOverride(state.currentBoardId)){
-    const d = state.boardsData[state.currentBoardId];
-    d.toolbarConfig = normalizeToolbarConfig(d.toolbarConfig);
-    return d.toolbarConfig;
-  }
   if(!state.toolbarConfig) state.toolbarConfig = defaultToolbarConfig();
   return state.toolbarConfig;
 }
 
-function persistEditableConfig(){
-  if(boardHasOverride(state.currentBoardId)) queueBoardSave(state.currentBoardId);
-  else queueToolbarConfigSave();
-}
-
 export function openToolbarSettings(){
   el("toolbarSettingsOverlay").classList.add("open");
-  const d = state.boardsData[state.currentBoardId];
-  el("tsBoardOverride").checked = !!(d && d.toolbarOverride);
   renderToolbarSettingsList();
 }
 
@@ -84,7 +65,7 @@ function wireRows(cfg){
     cb.addEventListener("change",()=>{
       const c = editableConfig();
       c.onBar[cb.dataset.onbar] = cb.checked;
-      persistEditableConfig();
+      queueToolbarConfigSave();
       applyRenderedChanges();
     });
   });
@@ -95,7 +76,7 @@ function wireRows(cfg){
       const key = inp.value.trim().toLowerCase();
       const c = editableConfig();
       if(key) c.hotkeys[typeId] = key; else delete c.hotkeys[typeId];
-      persistEditableConfig();
+      queueToolbarConfigSave();
       flagDuplicates(resolvedToolbarConfig());
       applyRenderedChanges();
     });
@@ -129,18 +110,5 @@ export function initToolbarSettings(){
   el("tsDone").addEventListener("click", closeToolbarSettings);
   el("toolbarSettingsOverlay").addEventListener("click",(e)=>{
     if(e.target===el("toolbarSettingsOverlay")) closeToolbarSettings();
-  });
-  el("tsBoardOverride").addEventListener("change",(e)=>{
-    const d = state.boardsData[state.currentBoardId];
-    if(!d) return;
-    d.toolbarOverride = e.target.checked;
-    if(d.toolbarOverride && !d.toolbarConfig){
-      // start the board's own copy from whatever is in effect right now
-      d.toolbarConfig = normalizeToolbarConfig(state.toolbarConfig || defaultToolbarConfig());
-    }
-    queueBoardSave(state.currentBoardId);
-    renderToolbarSettingsList();
-    applyRenderedChanges();
-    showToast(d.toolbarOverride ? "This page now has its own toolbar setup" : "This page uses the shared toolbar setup again");
   });
 }

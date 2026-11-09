@@ -137,6 +137,10 @@ export function nodeElement(node){
       '</div>'
     : '';
 
+  // A type can opt out of its title area (short notes rarely get a name).
+  // Unset means shown, so every existing type keeps its title.
+  const showTitle = !(defForBar && defForBar.showTitle===false);
+
   const kids = outgoingCount(node.id);
   const hiddenCount = node.collapsed ? descendantsOf(node.id).size : 0;
   const collapseBtn = kids
@@ -151,7 +155,9 @@ export function nodeElement(node){
     '<div class="node-header">' +
       collapseBtn +
       '<span class="grip">&#10807;&#10241;</span>' +
-      '<input class="node-title" value="'+escapeAttr(node.title)+'" placeholder="'+(node.type==='header'?'Topic title':'Title')+'">' +
+      (showTitle
+        ? '<input class="node-title" value="'+escapeAttr(node.title)+'" placeholder="'+(node.type==='header'?'Topic title':'Title')+'">'
+        : '<span class="node-title-spacer"></span>') +
       countBadge +
       '<div class="node-actions">' +
         (node.type==="image"?'<button class="icon-btn change-img" title="Replace image">&#8635;</button>':'') +
@@ -185,9 +191,11 @@ export function nodeElement(node){
   });
 
   const titleInput = div.querySelector(".node-title");
-  titleInput.addEventListener("pointerdown", e=>e.stopPropagation());
-  titleInput.addEventListener("input", e=>{ node.title=e.target.value; queueBoardSave(state.currentBoardId); });
-  titleInput.addEventListener("focus", ()=>selectNode(node.id));
+  if(titleInput){
+    titleInput.addEventListener("pointerdown", e=>e.stopPropagation());
+    titleInput.addEventListener("input", e=>{ node.title=e.target.value; queueBoardSave(state.currentBoardId); });
+    titleInput.addEventListener("focus", ()=>selectNode(node.id));
+  }
 
   /* custom-type fields */
   if(isCustomType(node.type)) wireCustomFields(div, node);

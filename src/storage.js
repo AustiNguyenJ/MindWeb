@@ -126,8 +126,6 @@ export function parseBoardText(txt){
   }
   return { ok:true, data:{
     nodes:p.nodes, connections:Array.isArray(p.connections)?p.connections:[],
-    toolbarOverride: !!p.toolbarOverride,
-    toolbarConfig: (p.toolbarConfig && typeof p.toolbarConfig==="object") ? p.toolbarConfig : null,
   } };
 }
 
@@ -151,8 +149,6 @@ export function boardPayload(id){
     id, name:b.name||"", description:b.description||"",
     updated: new Date().toISOString(),
     nodes: d.nodes, connections: d.connections,
-    toolbarOverride: !!d.toolbarOverride,
-    toolbarConfig: d.toolbarConfig || null,
   }, null, 2);
 }
 

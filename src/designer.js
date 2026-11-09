@@ -166,6 +166,8 @@ export function renderEditor(){
       '<div class="bd-color-picks">'+TYPE_ACCENTS.map(c=>'<button data-accent="'+c+'" class="'+(t.accent===c?"active":"")+'" style="background:'+themedNodeColor(c)+'"></button>').join('')+'</div></div>' +
     '<div class="bd-field-grp"><label>Default width ('+ (t.width||240) +'px)</label>' +
       '<input type="range" id="bdWidth" min="180" max="420" step="10" value="'+(t.width||240)+'" style="width:100%"></div>' +
+    '<div class="bd-field-grp"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;">' +
+      '<input type="checkbox" id="bdShowTitle" '+(t.showTitle===false?"":"checked")+'> Show a title area on this block</label></div>' +
     '<div class="bd-fields-label"><span>Fields</span></div>' +
     '<div id="bdFields"></div>' +
     '<button class="bd-addfield" id="bdAddField">+ Add field</button>' +
@@ -184,6 +186,11 @@ export function renderEditor(){
     e.target.previousElementSibling; // label
     ed.querySelector(".bd-field-grp:nth-child(3) label").textContent = "Default width ("+t.width+"px)";
     queueTypesSave(); renderPreview();
+  });
+  el("bdShowTitle").addEventListener("change",(e)=>{
+    t.showTitle = e.target.checked;
+    queueTypesSave(); renderPreview();
+    renderBoard();   // blocks already on the page pick up the change
   });
   el("bdAddField").addEventListener("click",()=>{
     t.fields.push(blankField());
@@ -359,7 +366,10 @@ export function renderPreview(){
   div.style.border="1.5px solid var(--line)"; div.style.borderRadius="10px"; div.style.boxShadow="var(--shadow)";
   div.innerHTML =
     '<div class="node-header"><span class="grip">\u2837\u2801</span>' +
-    '<input class="node-title" value="'+escapeAttr(t.name)+'" readonly style="pointer-events:none"></div>' +
+    (t.showTitle===false
+      ? '<span class="node-title-spacer"></span>'
+      : '<input class="node-title" value="'+escapeAttr(t.name)+'" readonly style="pointer-events:none">') +
+    '</div>' +
     customBodyHtml(fake);
   const host = el("bdPreview");
   host.innerHTML="";
