@@ -23,7 +23,7 @@ export function measureListOffsets(){
   state.groupOffsets = {};
   // auto-height blocks: store the height the browser actually gave them
   getData().nodes.forEach(node=>{
-    if(node.type!=="ticket" && !isCustomType(node.type)) return;
+    if(node.type!=="ticket" && node.type!=="label" && !isCustomType(node.type)) return;
     const nel = canvasInner.querySelector('.node[data-id="'+node.id+'"]');
     if(nel) node.h = nel.offsetHeight;
   });

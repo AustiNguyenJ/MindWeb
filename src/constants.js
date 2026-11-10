@@ -5,7 +5,48 @@
 export const IDX_KEY = "mindmap:index";
 export const COLORS = ["#ffffff","#fde68a","#bfdbfe","#bbf7d0","#fecaca","#e9d5ff"];
 export const DEFAULT_SIZE = { header:[220,50], note:[220,140], list:[230,150], question:[220,140],
-                       image:[240,190], ticket:[262,190], week:[330,260] };
+                       image:[240,190], ticket:[262,190], week:[330,260], label:[180,36] };
+/* Flowchart shapes. All six are one structural block type, "shape", told apart
+   by node.shape; the quick bar, hotkeys and connection-drop picker address
+   them by the pseudo-type ids in SHAPE_SPAWN, which createNode() translates
+   (see nodes.js). The shape's text lives in node.title, so search, export and
+   the cloud title column carry it with no extra plumbing. */
+export const SHAPE_KINDS = ["rect","rounded","ellipse","diamond","parallelogram","terminator"];
+export const SHAPE_SPAWN = {
+  shape_rect:"rect", shape_rounded:"rounded", shape_ellipse:"ellipse",
+  shape_diamond:"diamond", shape_parallelogram:"parallelogram", shape_terminator:"terminator",
+};
+export const SHAPE_SIZE = { rect:[160,90], rounded:[160,90], ellipse:[170,100],
+                            diamond:[180,110], parallelogram:[190,90], terminator:[160,64] };
+/* Geometry shared by how a shape is drawn (nodeElement.js / styles.css) and
+   where a connection meets it (connections.js edgePoint). Change one and the
+   other drifts: the arrow would stop short of, or poke into, the outline. */
+export const PARALLELOGRAM_SKEW = 0.2;   // top/bottom edge offset, as a fraction of width
+export const ROUNDED_RADIUS = 14;        // px
+/* Connector styling (connStyle.js). Every property is optional on a stored
+   connection and absent means the default below, so a connection saved before
+   these existed renders exactly as it always did. */
+export const CONN_ROUTES = ["straight","elbow","curve"];
+export const CONN_DASHES = ["solid","dashed","dotted"];
+export const CONN_SIDES = ["t","r","b","l"];
+export const CONN_COLOR_DEFAULT = "#9aa1ab";
+export const CONN_WIDTH_DEFAULT = 2;
+export const CONN_WIDTHS = { thin:1.5, normal:CONN_WIDTH_DEFAULT, thick:3.5 };
+/* Line colours are mid-tones that read on both the light and the dark canvas,
+   unlike COLORS, whose pastels are fill colours and vanish as a 2px line.
+   CONN_COLOR_DARK_MAP lifts the darker ones for dark mode, the same job
+   COLOR_DARK_MAP does for block fills (themedConnColor in util.js). */
+export const CONN_COLORS = [CONN_COLOR_DEFAULT, "#374151", "#4757d1", "#d64545", "#2f9e5f", "#d98a00", "#8b5cf6"];
+export const CONN_COLOR_DARK_MAP = {
+  "#374151": "#d1d5db",
+  "#4757d1": "#7c89e8",
+  "#d64545": "#f07178",
+  "#2f9e5f": "#4ec58a",
+  "#d98a00": "#f0b429",
+  "#8b5cf6": "#b794f6",
+};
+export const CONN_ELBOW_GAP = 28;       // px a same-side elbow runs out before turning back
+export const CONN_ELBOW_RADIUS = 8;     // px, rounded elbow corners
 export const HOTKEYS = { h:"header", n:"note", l:"list", q:"question", g:"image", t:"ticket", w:"week" };
 /* Quick-access toolbar + hotkeys, user-configurable via the Toolbar settings
    modal. Global by default; a board may opt into its own copy (see
@@ -14,14 +55,29 @@ export const HOTKEYS = { h:"header", n:"note", l:"list", q:"question", g:"image"
    (custom ct_* types) gets its accent/name from state.customTypes instead. */
 export const TOOLBAR_KEY = "mindmap:toolbar";
 export const BUILTIN_TOOLBAR_META = {
-  header:   { label:"Header",   accent:"#4757d1" },
-  note:     { label:"Note",     accent:"#e5e7eb" },
-  list:     { label:"List",     accent:"#fde68a" },
-  question: { label:"Question", accent:"#e9d5ff" },
-  ticket:   { label:"Ticket",   accent:"#bbf7d0" },
-  week:     { label:"Week",     accent:"#fecaca" },
-  image:    { label:"Image",    accent:"#bfdbfe" },
+  header:   { label:"Header",   accent:"#4757d1", section:"blocks" },
+  note:     { label:"Note",     accent:"#e5e7eb", section:"blocks" },
+  list:     { label:"List",     accent:"#fde68a", section:"blocks" },
+  question: { label:"Question", accent:"#e9d5ff", section:"blocks" },
+  ticket:   { label:"Ticket",   accent:"#bbf7d0", section:"blocks" },
+  week:     { label:"Week",     accent:"#fecaca", section:"blocks" },
+  image:    { label:"Image",    accent:"#bfdbfe", section:"blocks" },
+  shape_rect:          { label:"Rectangle",     accent:"#bfdbfe", section:"shapes" },
+  shape_rounded:       { label:"Rounded box",   accent:"#bbf7d0", section:"shapes" },
+  shape_ellipse:       { label:"Ellipse",       accent:"#fde68a", section:"shapes" },
+  shape_diamond:       { label:"Diamond",       accent:"#fecaca", section:"shapes" },
+  shape_parallelogram: { label:"Parallelogram", accent:"#e9d5ff", section:"shapes" },
+  shape_terminator:    { label:"Terminator",    accent:"#fed7aa", section:"shapes" },
+  label:               { label:"Text label",    accent:"#9aa1ab", section:"shapes" },
 };
+/* The quick bar's collapsible groups. Custom block types always sit in
+   "blocks". Which groups are folded is a per-viewer UI preference kept in
+   localStorage (toolbar.js), not part of the shared toolbar config. */
+export const TOOLBAR_SECTIONS = [
+  { id:"blocks", label:"Blocks" },
+  { id:"shapes", label:"Shapes" },
+];
+export const TOOLBAR_SECTIONS_KEY = "mindmap-toolbar-sections";
 /* image can't be spawned mid-connection-drag (it needs an async file picker,
    and there's no synchronous node to attach the in-progress connection to). */
 export const NO_CONNECT_SPAWN = { image:1 };

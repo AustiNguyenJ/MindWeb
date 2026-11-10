@@ -68,7 +68,7 @@ npm run test:baseline # the untouched original, for comparison
 npm run test:both     # both, in order
 npm run test:dist     # the built single-file artifact (whatever is currently in dist/)
 npm run test:all      # baseline, app, a credential-blanked build, then that built artifact
-npm run check         # syntax-check src/app.js
+npm run check         # syntax-check src/main.js
 ```
 
 `test:all` builds with `npm run build:test` rather than `npm run build`: the real
@@ -91,7 +91,7 @@ empty when the module graph is bundled for tests.
 Two jsdom limitations shape the harness, and are worth knowing before adding
 tests. There is **no layout** — `offsetTop`/`offsetHeight` are always 0, so
 nothing may assert on pixel offsets — and **no module execution**, so
-`src/app.js` is bundled to a classic script with esbuild before it is handed
+`src/main.js` is bundled to a classic script with esbuild before it is handed
 to jsdom. jsdom also implements neither `isContentEditable` nor focusable
 `contenteditable` divs, so `focus()` calls are tracked instead.
 
@@ -162,10 +162,131 @@ reference/        the pre-refactor single file, kept for A/B testing
 | `storage.js` `cloud.js` `exportImport.js` | The four backends, Supabase, backup files |
 | `pageLoader.js` | Staged loading: open page first, the rest in the background; pending pages are never saved |
 | `nodes.js` `rows.js` `connections.js` `collapse.js` | Blocks, their rows, the arrows, subtree folding |
+| `connStyle.js` `connRoutes.js` `connPopover.js` | A connection's look, the elbow/curve geometry, its style popover and label editor |
 | `selection.js` `view.js` `history.js` | Selection, pan/zoom, undo/redo |
 | `customFields.js` `nodeElement.js` `render.js` | Schema-driven fields, one block's DOM, drawing the page |
 | `canvas.js` `keyboard.js` `toolbar.js` | Pointer gestures, shortcuts and paste, the add buttons |
-| `sidebar.js` `pageMenu.js` `search.js` `picker.js` `designer.js` | The surrounding UI |
+| `sidebar.js` `notebookSwitcher.js` `pageMenu.js` `notebookMenu.js` `search.js` `picker.js` `designer.js` | The surrounding UI |
+
+### Flowchart shapes and text labels
+
+Six shapes (rectangle, rounded box, ellipse, diamond, parallelogram,
+terminator) are one hardcoded block type, `type: "shape"`, told apart by
+`node.shape`, with `node.border` for the outline and `node.color` for the fill.
+A text label is `type: "label"`. Both keep their text in `node.title`, so
+search, export and the cloud `title` column need nothing extra; `shape` and
+`border` ride in `fields.__builtin` for cloud (`CLOUD_BUILTIN_EXTRAS`). The
+quick bar, hotkeys and connection picker address the shapes as the pseudo-ids
+in `SHAPE_SPAWN` (`shape_rect`, ...), which `createNode()` turns into a
+`shape` block. Connections meet a shape's real outline (`edgePoint()` in
+`connections.js`); the geometry constants in `constants.js` are shared with the
+drawing code, so change them together. Like header and image, these are not
+listed in the Block Designer. The quick bar is split into collapsible Blocks and
+Shapes sections; the folded state is per device, in localStorage.
+
+### Connectors
+
+Every connection is drawn straight, aimed at the other block's centre and
+clipped at its edge, unless it says otherwise. It can say otherwise with
+optional properties on the connection object, **stored only when they differ
+from the default** (so a plain connection is still the same six keys, in board
+files, exports, undo snapshots and the cloud alike):
+
+| Property | Values | Absent means |
+| --- | --- | --- |
+| `route` | `"elbow"`, `"curve"` | straight |
+| `startArrow` / `endArrow` | `true` / `false` | no start arrow / an end arrow |
+| `dash` | `"dashed"`, `"dotted"` | solid |
+| `color` | `"#rrggbb"` | the grey `#9aa1ab` |
+| `width` | number, 0.5 to 12 | 2 |
+| `fromSide` / `toSide` | `"t"` `"r"` `"b"` `"l"` | automatic |
+
+`connStyle.js` is the only place that decides what is valid
+(`sanitizeConnStyle`); it runs on everything read back, so a hand-edited or
+damaged file draws as defaults instead of reaching an SVG attribute. Use
+`setConnStyle(conn, patch)` to change one, which keeps the object canonical.
+A link between two whole `shape` blocks starts as `route: "elbow"`; nothing
+else changes how an existing connection looks.
+
+Straight connections are a `<line>`, exactly as before. Elbows and curves are a
+`<path>` between the *side midpoints* of the two blocks (`connRoutes.js`: pure
+geometry, tested with explicit rectangles): an unpinned end takes the side
+facing the other block, a pinned one its `fromSide`/`toSide`, and the line leaves
+and arrives perpendicular to it. Pinned sides attach at the real outline's
+midpoint (a diamond's vertex), via `sidePoint()` and `edgePoint()`. Row ends
+(`fromItem`/`toItem` set) keep their own attach rule and ignore sides. There is
+no obstacle avoidance.
+
+Arrowheads are SVG markers, one per colour and end (a marker cannot take its
+line's colour in every browser); the default grey end arrow is still the static
+`#arrowHead` in `index.html`. The thin visible stroke and the fat transparent
+click target share one route. `connections.js` keeps the drawn elements in
+`connEls`, so dragging a block updates only the connections attached to it, in
+place.
+
+Selecting a connection opens a style popover at its midpoint and shows a handle
+on each whole-block end. Every block has four *side dots* (hover or select
+it): drag from one to leave by that side, drop on one to arrive there, or drag
+an end handle onto one to re-pin an existing connection. A label is edited in
+place (double-click, or the popover's Label button), not through `prompt()`.
+
+Cloud: the `connections` table has no column for any of this and cannot be
+migrated from the client, so a styled connection's label column holds a marked
+JSON envelope (`packConnLabel` / `unpackConnLabel` in `cloud.js`); an unstyled one
+still stores its plain label, and an old row loads with default styling.
+
+### The sidebar: focus mode
+
+The sidebar shows **one notebook's level at a time** instead of the whole nested
+tree. From the top: the notebook switcher button, a breadcrumb up the viewed
+notebook's chain, the page filter, then that notebook's direct sub-notebooks as
+single compact rows (name, page count, chevron) above its pages.
+
+`viewNotebookId` (in `sidebar.js`) is the notebook being viewed. It is **view
+state only**: never stored, never in `state.js`, and changing it touches no
+notebook or page and queues no save, so the stored data model (including
+`collapsed`, which the view no longer reads) is exactly what it was. It follows
+the open page: `renderBoardList()` compares `state.currentBoardId` with the page
+it last followed and, when it changed (a click, a search jump, a favorite, a new,
+duplicated or deleted page, a load), views that page's notebook. Anything that
+changes the open page therefore only has to re-render the list, which it must do
+to move the highlight anyway. Choosing a notebook (a row, a crumb, the switcher)
+only changes the view; it never opens a page.
+
+- **Switcher** (`notebookSwitcher.js`): a panel under the notebook button listing
+  every notebook as an indented tree, with the favorites (pinned pages from every
+  notebook) as its first section. It closes on Escape (via `closeSidebarPopups()`
+  in `keyboard.js`, so Escape does not also deselect blocks) and on a click
+  outside. It is re-rendered with every list render and merely hidden while
+  closed.
+- **Page filter**: narrows the list by page name (case-insensitive substring) and,
+  while non-empty, searches the *whole subtree* of the viewed notebook, labelling
+  results from sub-notebooks. It is separate from the global search (Shift+F),
+  clears on Escape, and is reset by anything that changes the viewed notebook. A
+  page opened from the filtered results does not move the view; a page opened
+  from elsewhere that the filter cannot show clears the filter and moves it.
+  Dragging is off while filtering.
+- **New things**: `+ New page` and `+ Notebook` act on the viewed notebook (the
+  latter makes a sub-notebook); the switcher's `+ New top-level notebook` makes a
+  top-level one and views it. `newNotebook(undefined)` means "in the viewed
+  notebook", `newNotebook(null)` means "top level". A new notebook is named in
+  place, in its row or, for the viewed one, in the last crumb.
+- **Moving**: pages reorder by dragging; a page dropped on a sub-notebook row or an
+  ancestor crumb moves there. A notebook dragged onto the middle of another row
+  nests inside it, onto the top/bottom edge reorders, onto an ancestor crumb moves
+  up. **Move to...** in the page and notebook menus (`openMoveToPicker`) reaches
+  every other notebook; it greys out a notebook's own subtree, so a notebook can't
+  be moved into itself (the move functions refuse as well).
+- **Selection**: a multi-selection only ever holds pages currently on screen; a
+  page that leaves the list (another notebook, a filter, a move) drops out of it,
+  so the bulk-delete bar can't delete pages you can't see.
+- **Keyboard**: crumbs, rows, the switcher, favorites and the filter are tab
+  stops; Enter/Space activate a row, the arrows walk the rows, and the Menu key or
+  Shift+F10 opens a row's menu. Re-rendering puts focus back on the row's
+  replacement.
+
+An import brings its notebooks in alongside the existing ones; they appear in the
+switcher but the view stays where it was.
 
 ### Two things to know before editing
 

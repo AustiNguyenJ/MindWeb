@@ -209,6 +209,8 @@ export const DEFAULT_ENTRY = process.env.MINDMAP_ENTRY || "reference/mindmap-too
  * @param {object} [opts]
  * @param {object} [opts.storage] seed for a fake window.storage; supplying it
  *        selects the "app" backend instead of the in-memory fallback.
+ * @param {function} [opts.beforeParse] runs on the new window before the page's
+ *        scripts do, for stubbing browser APIs (e.g. localStorage).
  */
 export async function createApp(entry = DEFAULT_ENTRY, opts = {}) {
   const file = resolve(ROOT, entry);
@@ -254,6 +256,7 @@ export async function createApp(entry = DEFAULT_ENTRY, opts = {}) {
     beforeParse(window) {
       window.__stubRecorder = installStubs(window);
       if (opts.storage) installFakeStorage(window, opts.storage);
+      if (opts.beforeParse) opts.beforeParse(window);
     },
   });
 
@@ -308,8 +311,9 @@ function helpers(window) {
     /** Nodes currently rendered on the canvas. */
     nodes: () => $$("#canvasInner .node"),
     nodeTypes: () => $$("#canvasInner .node").map((n) => n.className.match(/type-(\S+)/)?.[1]),
-    /** Visible connection lines (the drawn ones, not the fat hit targets). */
-    connCount: () => $$("#connSvg line.visible").length,
+    /** Visible connection strokes (the drawn ones, not the fat hit targets). A
+     *  straight link is a <line>; an elbow or curve is a <path>. */
+    connCount: () => $$("#connSvg .visible").length,
     /** Sidebar page rows. */
     pages: () => $$(".board-item"),
     notebookNames: () => $$(".nb-name").map((n) => n.textContent.trim()),

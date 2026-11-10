@@ -16,11 +16,13 @@ import {
   focusNodeTitle,
 } from "./nodes.js";
 import { createConnection, deleteConnection } from "./connections.js";
+import { sanitizeConnStyle } from "./connStyle.js";
 import { renderBoard } from "./render.js";
 import { undo, redo } from "./history.js";
 import { toggleSearch, closeSearch } from "./search.js";
 import { closeHelp } from "./help.js";
 import { closePageMenu } from "./pageMenu.js";
+import { closeSidebarPopups } from "./notebookSwitcher.js";
 import { cleanupConnectVisuals, fromItemLabel } from "./canvas.js";
 import { queueBoardSave } from "./storage.js";
 import { cancelConfirmModal } from "./confirmModal.js";
@@ -58,7 +60,8 @@ export function pasteNodeCopy(src){
         id: uid(), from: idMap[c.from], to: idMap[c.to],
         fromItem: (c.fromItem===undefined?null:c.fromItem),
         toItem: (c.toItem===undefined?null:c.toItem),
-        label: c.label || ""
+        label: c.label || "",
+        ...sanitizeConnStyle(c)
       });
     }
   });
@@ -117,7 +120,7 @@ export function initKeyboard(){
         const node = createNode(type, state.cursorCanvas.x+90, state.cursorCanvas.y, {silent:true});
         const label = fromItemLabel(from);
         if(label) node.title = label;
-        createConnection(from.fromId, from.fromItem, node.id, null);
+        createConnection(from.fromId, from.fromItem, node.id, null, { fromSide:from.fromSide });
         renderBoard();
         focusNodeTitle(node.id);
         return;
@@ -161,7 +164,8 @@ export function initKeyboard(){
     }
     if(e.key==="Escape"){
       if(el("pageMenu")){ closePageMenu(); return; }
-      if(state.dragState && state.dragState.mode==="connect"){ cleanupConnectVisuals(); state.dragState=null; }
+      if(closeSidebarPopups()) return;
+      if(state.dragState && (state.dragState.mode==="connect" || state.dragState.mode==="reconnect")){ cleanupConnectVisuals(); state.dragState=null; }
       deselectAll();
     }
   });

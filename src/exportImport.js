@@ -5,7 +5,7 @@ import { ensureNotebookStructure } from "./boards.js";
 import { migrateLongtextKinds } from "./blockTypes.js";
 import { queueTypesSave, persistIndex, persistBoard } from "./storage.js";
 import { migrateNode } from "./nodes.js";
-import { renderBoardList } from "./sidebar.js";
+import { renderBoardList, viewNotebook } from "./sidebar.js";
 import { renderTypeToolbar } from "./designer.js";
 import { pendingCount, whenAllLoaded } from "./pageLoader.js";
 
@@ -87,6 +87,10 @@ export function importAll(file){
     });
     ensureNotebookStructure();
     renderBoardList();
+    // the sidebar shows one notebook level at a time: take the view to what
+    // was just imported so the new pages are not hidden behind the switcher
+    const firstImported = importNbId || nbMap[payload.notebooks[0].id];
+    if(firstImported) viewNotebook(firstImported);
     await persistIndex();
     for(const b of state.boards){ await persistBoard(b.id); }
     showToast("Imported");

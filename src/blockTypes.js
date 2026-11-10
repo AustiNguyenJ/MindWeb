@@ -1,6 +1,6 @@
 import { state } from "./state.js";
 import { uid, looksRich } from "./util.js";
-import { EDITABLE_BUILTINS, TYPES_KEY, BUILTIN_KEYS } from "./constants.js";
+import { EDITABLE_BUILTINS, TYPES_KEY, BUILTIN_KEYS, BUILTIN_TOOLBAR_META, SHAPE_SPAWN } from "./constants.js";
 import { showToast } from "./toast.js";
 import { queueTypesSave, fsRead } from "./storage.js";
 
@@ -9,8 +9,9 @@ import { queueTypesSave, fsRead } from "./storage.js";
  * A block type is a schema: an ordered list of fields plus a default width
  * and accent. User-defined types (ct_*) and the editable built-ins (note,
  * question, ticket) share the same shape, which is why one renderer serves
- * both. The remaining built-ins -- list, week, header, image -- have special
- * behaviour and stay hardcoded.
+ * both. The remaining built-ins -- list, week, header, image, and the
+ * flowchart shape and label blocks -- have special behaviour and stay
+ * hardcoded.
  *
  * Built-in types keep their values in top-level node properties rather than
  * in node.fields; fieldVal / setFieldVal hide that difference. Anything that
@@ -129,6 +130,10 @@ export function spawnableTypes(){
   push("week", "Week", "#ffffff");
   push("header", "Header", "#4757d1");
   push("image", "Image", "#bfdbfe");
+  // flowchart shapes and the text label
+  Object.keys(SHAPE_SPAWN).concat("label").forEach(id=>{
+    push(id, BUILTIN_TOOLBAR_META[id].label, BUILTIN_TOOLBAR_META[id].accent);
+  });
   // any custom (non-builtin) types
   Object.keys(state.customTypes).forEach(id=>{
     const t = state.customTypes[id];

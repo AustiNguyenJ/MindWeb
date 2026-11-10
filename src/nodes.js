@@ -1,5 +1,5 @@
 import { state } from "./state.js";
-import { DEFAULT_SIZE } from "./constants.js";
+import { DEFAULT_SIZE, SHAPE_KINDS, SHAPE_SIZE, SHAPE_SPAWN } from "./constants.js";
 import { uid, currentWeekLabel, plainToHtml } from "./util.js";
 import { canvasInner, imgFileInput } from "./dom.js";
 import { getData, findNode } from "./boards.js";
@@ -39,6 +39,11 @@ export function migrateNode(n){
       if(f.kind==="group" && !Array.isArray(n.fields[f.key])) n.fields[f.key] = [];
     });
   }
+  if(n.type==="shape"){
+    if(SHAPE_KINDS.indexOf(n.shape)===-1) n.shape = "rect";
+    if(typeof n.border !== "boolean") n.border = true;
+  }
+  if((n.type==="shape" || n.type==="label") && typeof n.title !== "string") n.title = "";
   if(n.type==="week" && !Array.isArray(n.tickets)) n.tickets = [blankTicket()];
   if(n.type==="week" && !n.tickets.length) n.tickets = [blankTicket()];
   if(n.type==="week") n.tickets.forEach(t=>{
@@ -57,10 +62,15 @@ export function migrateNode(n){
 }
 
 /* ---------- nodes ---------- */
+/* "type" may also be one of the shape_* pseudo-ids from SHAPE_SPAWN (what the
+   quick bar, hotkeys and the connection-drop picker pass): those become a
+   "shape" block with node.shape set. */
 export function createNode(type, cx, cy, opts){
   opts = opts || {};
+  const shape = SHAPE_SPAWN[type];
+  if(shape) type = "shape";
   const def = state.customTypes[type];
-  const size = def ? [def.width||240, 120] : (DEFAULT_SIZE[type] || [220,140]);
+  const size = def ? [def.width||240, 120] : (shape ? SHAPE_SIZE[shape] : (DEFAULT_SIZE[type] || [220,140]));
   const node = {
     id: uid(), type,
     x: Math.round(cx-size[0]/2), y: Math.round(cy-size[1]/2),
@@ -74,6 +84,8 @@ export function createNode(type, cx, cy, opts){
     link: type==="ticket" ? "" : undefined,
     assigned: type==="ticket" ? "" : undefined,
     customer: type==="ticket" ? "" : undefined,
+    shape: shape,
+    border: shape ? true : undefined,
     weekLabel: type==="week" ? currentWeekLabel() : undefined,
     tickets: type==="week" ? [blankTicket()] : undefined,
     color: def ? (def.accent||"#ffffff") : "#ffffff",

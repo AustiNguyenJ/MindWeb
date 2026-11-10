@@ -12,6 +12,7 @@ import { renderBoardList, renderBoardHeader } from "./sidebar.js";
 import { renderTypeToolbar } from "./designer.js";
 import { normalizeToolbarConfig } from "./toolbarConfig.js";
 import { reconstructMissingTypes } from "./blockTypes.js";
+import { sanitizeConnStyle } from "./connStyle.js";
 import {
   setPending, loadBoards, startBackgroundLoad, onLoadProgress,
   recallBoard, backgroundOrder, pendingCount,
@@ -32,7 +33,7 @@ import {
    property. Instead these ride inside the same `fields` jsonb column custom
    block types already use, namespaced under __builtin so a Designer-defined
    custom field can never collide with one of these names. */
-const CLOUD_BUILTIN_EXTRAS = ["ticketNo", "link", "assigned", "customer", "items", "tickets", "weekLabel", "image"];
+const CLOUD_BUILTIN_EXTRAS = ["ticketNo", "link", "assigned", "customer", "items", "tickets", "weekLabel", "image", "shape", "border"];
 
 export function withBuiltinExtras(fields, node){
   const extras = {};
@@ -46,6 +47,51 @@ export function withBuiltinExtras(fields, node){
 export function splitBuiltinExtras(fields){
   const { __builtin, ...rest } = fields || {};
   return { fields: rest, extras: __builtin || {} };
+}
+
+/* A connection's style (route, arrowheads, dash, colour, width, pinned sides --
+   see connStyle.js) has no column of its own in the connections table, and the
+   table cannot be migrated from here. The only free-form text column is
+   `label`, so a styled connection stores its label there as a small JSON
+   envelope behind a marker:
+
+     "\u2063mm1\u2063" + JSON.stringify({ label, ...non-default style props })
+
+   (U+2063 is an invisible separator, so the marker will not collide with
+   anything anyone types). A connection with default styling, which is nearly all
+   of them, still stores its plain label text exactly as before, so those rows
+   are unchanged and a row written before this existed is read as a plain label
+   with default styling. Only a row actually carrying a style is unreadable to an
+   older copy of the app, which would show the envelope as its label. */
+const CONN_STYLE_MARK = "\u2063mm1\u2063";
+
+export function packConnLabel(conn){
+  const label = conn.label || "";
+  const style = sanitizeConnStyle(conn);
+  if(!Object.keys(style).length && label.indexOf(CONN_STYLE_MARK)!==0) return label || null;
+  return CONN_STYLE_MARK + JSON.stringify({ label, ...style });
+}
+
+export function unpackConnLabel(raw){
+  if(typeof raw!=="string") return { label:"" };
+  if(raw.indexOf(CONN_STYLE_MARK)!==0) return { label:raw };
+  try{
+    const env = JSON.parse(raw.slice(CONN_STYLE_MARK.length));
+    if(env && typeof env==="object") return { label: typeof env.label==="string" ? env.label : "", ...sanitizeConnStyle(env) };
+  }catch(err){ /* damaged envelope: fall through and keep the text */ }
+  return { label:raw };
+}
+
+/* A connection as the connections table stores it, and back. */
+export function connToRow(c, boardId){
+  return {
+    id:c.id, board_id:boardId, from_node:c.from, from_item:c.fromItem||null,
+    to_node:c.to, to_item:c.toItem||null, label:packConnLabel(c)
+  };
+}
+
+export function connFromRow(r){
+  return { id:r.id, from:r.from_node, fromItem:r.from_item, to:r.to_node, toItem:r.to_item, ...unpackConnLabel(r.label) };
 }
 
 /* ---------- Supabase client (cloud backend, work in progress) ---------
@@ -469,11 +515,7 @@ async function cloudFetchBoards(ids){
       fields, collapsed:!!r.collapsed, ...extras
     }));
   });
-  connRows.forEach(r=>{
-    out[r.board_id].connections.push({
-      id:r.id, from:r.from_node, fromItem:r.from_item, to:r.to_node, toItem:r.to_item, label:r.label
-    });
-  });
+  connRows.forEach(r=>{ out[r.board_id].connections.push(connFromRow(r)); });
   return out;
 }
 
@@ -595,10 +637,7 @@ export async function cloudPersistBoard(id){
     if(error) throw error;
   }
   if(data.connections.length){
-    const rows = data.connections.map(c=>({
-      id:c.id, board_id:id, from_node:c.from, from_item:c.fromItem||null,
-      to_node:c.to, to_item:c.toItem||null, label:c.label||null
-    }));
+    const rows = data.connections.map(c=>connToRow(c, id));
     const { error } = await state.supabaseClient.from("connections").upsert(rows);
     if(error) throw error;
   }

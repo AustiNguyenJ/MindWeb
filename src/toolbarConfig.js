@@ -16,17 +16,37 @@ export function defaultToolbarConfig(){
   return {
     order: order.slice(),
     onBar,
-    hotkeys: { header:"h", note:"n", list:"l", question:"q", ticket:"t", week:"w", image:"g" },
+    hotkeys: { header:"h", note:"n", list:"l", question:"q", ticket:"t", week:"w", image:"g",
+               shape_rect:"r", shape_rounded:"b", shape_ellipse:"o", shape_diamond:"d",
+               shape_parallelogram:"p", shape_terminator:"s", label:"a" },
   };
 }
 
+/* A config saved before a built-in existed has no entry for it: it gains the
+   default order slot, on-bar flag and hotkey -- except that a default hotkey
+   is withheld when the saved config already binds that key to something else,
+   so upgrading can never create a duplicate binding. */
 export function normalizeToolbarConfig(raw){
   const base = defaultToolbarConfig();
   if(!raw || typeof raw!=="object") return base;
+  const rawHotkeys = (raw.hotkeys && typeof raw.hotkeys==="object") ? raw.hotkeys : {};
+  const hotkeys = Object.assign({}, base.hotkeys, rawHotkeys);
+  let order = base.order;
+  if(Array.isArray(raw.order)){
+    order = raw.order.slice();
+    base.order.forEach(id=>{
+      if(order.indexOf(id)!==-1) return;
+      order.push(id);
+      if(rawHotkeys[id]!==undefined || !base.hotkeys[id]) return;
+      const taken = Object.keys(rawHotkeys).some(other=>
+        String(rawHotkeys[other]||"").trim().toLowerCase()===base.hotkeys[id]);
+      if(taken) delete hotkeys[id];
+    });
+  }
   return {
-    order: Array.isArray(raw.order) ? raw.order.slice() : base.order,
+    order,
     onBar: Object.assign({}, base.onBar, (raw.onBar && typeof raw.onBar==="object") ? raw.onBar : {}),
-    hotkeys: Object.assign({}, base.hotkeys, (raw.hotkeys && typeof raw.hotkeys==="object") ? raw.hotkeys : {}),
+    hotkeys,
   };
 }
 
@@ -36,12 +56,13 @@ export function normalizeToolbarConfig(raw){
    from cfg.order. */
 export function toolbarEntries(){
   const list = Object.keys(BUILTIN_TOOLBAR_META).map(id=>(
-    { id, name: BUILTIN_TOOLBAR_META[id].label, accent: BUILTIN_TOOLBAR_META[id].accent, builtin:true }
+    { id, name: BUILTIN_TOOLBAR_META[id].label, accent: BUILTIN_TOOLBAR_META[id].accent,
+      section: BUILTIN_TOOLBAR_META[id].section, builtin:true }
   ));
   Object.keys(state.customTypes).forEach(id=>{
     const t = state.customTypes[id];
     if(t.builtin) return;   // note/question/ticket already listed above by their own id
-    list.push({ id, name: t.name || "Custom", accent: t.accent || "#ffffff", builtin:false });
+    list.push({ id, name: t.name || "Custom", accent: t.accent || "#ffffff", section:"blocks", builtin:false });
   });
   return list;
 }
@@ -54,13 +75,13 @@ export function resolvedToolbarConfig(){
   return state.toolbarConfig || defaultToolbarConfig();
 }
 
-/* Built-in, non-image entries currently on the bar, in configured order --
-   what toolbar.js renders into #builtinToolbarBtns. (Image keeps its own
-   fixed button; custom types keep their own #customTypeBtns container.) */
-export function barBuiltinEntries(){
+/* Built-in, non-image entries of one bar section currently on the bar, in
+   configured order. (Image keeps its own fixed button; custom types keep
+   their own #customTypeBtns container.) */
+function barSectionEntries(section){
   const cfg = resolvedToolbarConfig();
   const byId = {};
-  toolbarEntries().forEach(e=>{ if(e.builtin) byId[e.id] = e; });
+  toolbarEntries().forEach(e=>{ if(e.builtin && e.section===section) byId[e.id] = e; });
   const seen = new Set();
   const ordered = [];
   cfg.order.forEach(id=>{
@@ -73,6 +94,15 @@ export function barBuiltinEntries(){
   });
   return ordered.filter(e => cfg.onBar[e.id]!==false).map(e=>({ ...e, hotkey: cfg.hotkeys[e.id]||"" }));
 }
+
+/* What toolbar.js renders into #builtinToolbarBtns (the Blocks section). */
+export function barBuiltinEntries(){ return barSectionEntries("blocks"); }
+
+/* ...and into #shapeToolbarBtns (the Shapes section: the six flowchart shapes
+   and the text label). Each is its own bar button with its own onBar flag and
+   hotkey, rather than one "Shapes" button opening a picker: that keeps every
+   shape one keystroke or click away and the per-id config model unchanged. */
+export function barShapeEntries(){ return barSectionEntries("shapes"); }
 
 export function barCustomEntries(){
   const cfg = resolvedToolbarConfig();

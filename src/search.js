@@ -69,6 +69,8 @@ export function boardsInScope(){
   return state.boards;
 }
 
+/* Shape and text-label blocks keep their text in n.title, so the title term
+   below already covers them. */
 export function nodeHaystack(n){
   const listText = Array.isArray(n.items) ? n.items.join(" ") : "";
   const tkText = Array.isArray(n.tickets)

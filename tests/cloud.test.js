@@ -8,7 +8,7 @@ import { withBuiltinExtras, splitBuiltinExtras } from "../src/cloud.js";
 
 /* Guards the cloud-backend fix: built-in node properties that have no
    dedicated Supabase column (ticketNo/link/assigned/customer/items/tickets/
-   weekLabel/image) must round-trip through the same `fields` jsonb column
+   weekLabel/image/shape/border) must round-trip through the same `fields` jsonb column
    custom block types already use, without disturbing a genuine custom field
    of the same node. */
 
@@ -63,5 +63,31 @@ describe("cloud built-in field extras", () => {
     const packed = withBuiltinExtras({}, node);
     const { extras } = splitBuiltinExtras(packed);
     expect(extras.image).toBe("data:image/jpeg;base64,AAAA");
+  });
+
+  it("carries a flowchart shape's kind and outline flag", () => {
+    const node = { id: "n6", type: "shape", shape: "diamond", border: false, title: "Done?", color: "#fde68a" };
+    const packed = withBuiltinExtras({}, node);
+    expect(packed.__builtin).toEqual({ shape: "diamond", border: false });
+    const { fields, extras } = splitBuiltinExtras(packed);
+    expect(fields).toEqual({});
+    expect(extras).toEqual({ shape: "diamond", border: false });
+  });
+
+  it("keeps a false outline flag (it is a value, not an absence)", () => {
+    const packed = withBuiltinExtras({}, { type: "shape", shape: "rect", border: false });
+    expect(packed.__builtin.border).toBe(false);
+  });
+
+  it("packs nothing for a text label, whose text rides in the title column", () => {
+    const packed = withBuiltinExtras({}, { id: "n7", type: "label", title: "Phase one", w: 200 });
+    expect(packed).toEqual({});
+  });
+
+  it("restores shape extras onto the node the way cloudFetchBoards spreads them", () => {
+    const packed = withBuiltinExtras({ x: 1 }, { type: "shape", shape: "ellipse", border: true });
+    const { fields, extras } = splitBuiltinExtras(packed);
+    const node = { id: "n8", type: "shape", fields, ...extras };
+    expect(node).toMatchObject({ shape: "ellipse", border: true, fields: { x: 1 } });
   });
 });

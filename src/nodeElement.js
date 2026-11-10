@@ -1,5 +1,5 @@
 import { state } from "./state.js";
-import { COLORS, COPY_ICON } from "./constants.js";
+import { COLORS, COPY_ICON, SHAPE_KINDS, PARALLELOGRAM_SKEW, CONN_SIDES } from "./constants.js";
 import {
   escapeHtml,
   escapeAttr,
@@ -32,7 +32,7 @@ import {
   duplicateNode,
   processImageFile,
 } from "./nodes.js";
-import { updateConnectionsTouching } from "./connections.js";
+import { updateConnectionsTouching, sidePoint } from "./connections.js";
 import { measureListOffsets, renderBoard } from "./render.js";
 import { queueBoardSave } from "./storage.js";
 import { startConnectDrag } from "./canvas.js";
@@ -51,14 +51,36 @@ import { startConnectDrag } from "./canvas.js";
  * have several.
  */
 
+/* The outline layer behind a shape's text. Ellipse, diamond and parallelogram
+   are SVG polygons in a stretch-to-fit 100x100 box with a non-scaling stroke,
+   so they stay correct at any size; the box-like shapes are a CSS-rounded div,
+   since a stretched SVG would squash their corners. The outline geometry must
+   match edgePoint() in connections.js. */
+function shapeBgHtml(kind){
+  const skew = Math.round(PARALLELOGRAM_SKEW*100);
+  const svg = {
+    ellipse: '<ellipse cx="50" cy="50" rx="50" ry="50"/>',
+    diamond: '<polygon points="50,0 100,50 50,100 0,50"/>',
+    parallelogram: '<polygon points="'+skew+',0 100,0 '+(100-skew)+',100 0,100"/>',
+  }[kind];
+  return svg
+    ? '<svg class="shape-bg shape-svg" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">'+svg+'</svg>'
+    : '<div class="shape-bg shape-box"></div>';
+}
+
 /* ---------- node element ---------- */
 export function nodeElement(node){
+  const isShape = node.type==="shape";
+  const diagram = isShape || node.type==="label";   // header-less, text-only blocks
+  const shapeKind = isShape ? (SHAPE_KINDS.indexOf(node.shape)!==-1 ? node.shape : "rect") : "";
   const div = document.createElement("div");
-  div.className = "node type-"+node.type + (state.selection.has(node.id)?" selected":"");
+  div.className = "node type-"+node.type + (isShape?" shape-"+shapeKind:"") +
+    (isShape && node.border===false ? " no-border" : "") + (state.selection.has(node.id)?" selected":"");
   div.dataset.id = node.id;
   div.style.left = node.x+"px"; div.style.top = node.y+"px"; div.style.width = node.w+"px";
-  if(node.type!=="list" && node.type!=="ticket" && node.type!=="week" && !isCustomType(node.type)) div.style.height = node.h+"px";
-  if(node.type!=="header" && node.type!=="image") div.style.background = themedNodeColor(node.color);
+  if(node.type!=="list" && node.type!=="ticket" && node.type!=="week" && node.type!=="label" && !isCustomType(node.type)) div.style.height = node.h+"px";
+  if(node.type!=="header" && node.type!=="image" && !diagram) div.style.background = themedNodeColor(node.color);
+  if(isShape) div.style.setProperty("--shape-fill", themedNodeColor(node.color));
 
   let bodyHtml = "";
   if(node.type==="image"){
@@ -101,6 +123,15 @@ export function nodeElement(node){
       '<button class="add-item-btn">+ ticket</button>' +
       '<div class="wk-notes-label">Notes</div>' +
       '<div class="node-body"><div class="node-rich" contenteditable="true" data-ph="Notes for the week...">'+sanitizeHtml(node.bodyHtml)+'</div></div>';
+  } else if(diagram){
+    // the text is node.title (see SHAPE_KINDS in constants.js). A textarea
+    // keeps it plain text; the grid wrapper mirrors its content so the box
+    // grows with the text. The leading newline is swallowed by the HTML
+    // parser, and keeps a value that starts with one from losing it.
+    bodyHtml = (isShape ? shapeBgHtml(shapeKind) : '<span class="label-grip">&#10807;&#10241;</span>') +
+      '<div class="diagram-text"><div class="diagram-textgrid">' +
+        '<textarea class="node-title diagram-input" rows="1" spellcheck="false" placeholder="'+(isShape?'Text':'Label')+'">\n'+escapeHtml(node.title||"")+'</textarea>' +
+      '</div></div>';
   } else if(isCustomType(node.type)){
     bodyHtml = customBodyHtml(node);
   } else if(node.type!=="header"){
@@ -108,7 +139,7 @@ export function nodeElement(node){
     bodyHtml = '<div class="node-body"><div class="node-rich" contenteditable="true" data-ph="'+ph+'">'+sanitizeHtml(node.bodyHtml)+'</div></div>';
   }
 
-  const colorRow = (node.type!=="image" && node.type!=="header")
+  const colorRow = (node.type!=="image" && node.type!=="header" && node.type!=="label")
     ? '<div class="color-row">'+COLORS.map(c=>'<button class="swatch '+(node.color===c?'active':'')+'" data-color="'+c+'" style="background:'+themedNodeColor(c)+'"></button>').join('')+'</div>'
     : '';
 
@@ -151,8 +182,13 @@ export function nodeElement(node){
   const countBadge = (node.collapsed && hiddenCount)
     ? '<span class="hidden-badge">'+hiddenCount+' hidden</span>' : '';
 
-  div.innerHTML =
-    '<div class="node-header">' +
+  const headerHtml = diagram
+    ? '<div class="diagram-actions"><div class="node-actions">' +
+        (isShape ? '<button class="icon-btn border-toggle" title="Toggle outline">&#9635;</button>' : '') +
+        '<button class="icon-btn dupe" title="Duplicate">&#10064;</button>' +
+        '<button class="icon-btn del" title="Delete">&times;</button>' +
+      '</div></div>'
+    : '<div class="node-header">' +
       collapseBtn +
       '<span class="grip">&#10807;&#10241;</span>' +
       (showTitle
@@ -164,7 +200,12 @@ export function nodeElement(node){
         '<button class="icon-btn dupe" title="Duplicate">&#10064;</button>' +
         '<button class="icon-btn del" title="Delete">&times;</button>' +
       '</div>' +
-    '</div>' + bodyHtml + colorRow + fmtBar +
+    '</div>';
+
+  // first, so the dots sit beneath every other control that overlaps them
+  const sideDots = CONN_SIDES.map(s=>'<div class="side-dot" data-side="'+s+'" title="Drag to connect from this side"></div>').join('');
+  div.innerHTML =
+    sideDots + headerHtml + bodyHtml + colorRow + fmtBar +
     (node.type!=="header" ? '<div class="resize-handle"></div>' : '') +
     '<div class="conn-handle" title="Drag to connect"></div>';
 
@@ -176,7 +217,7 @@ export function nodeElement(node){
 
   div.addEventListener("pointerdown",(e)=>{
     if(e.button!==0) return;
-    if(e.target.closest("input,textarea,button,.resize-handle,.conn-handle,.row-conn")) return;
+    if(e.target.closest("input,textarea,button,.resize-handle,.conn-handle,.side-dot,.row-conn")) return;
     selectNode(node.id, e.ctrlKey||e.metaKey||e.shiftKey);
     const ids = state.selection.has(node.id) && state.selection.size>1 ? [...state.selection] : [node.id];
     const moving = [];
@@ -195,6 +236,23 @@ export function nodeElement(node){
     titleInput.addEventListener("pointerdown", e=>e.stopPropagation());
     titleInput.addEventListener("input", e=>{ node.title=e.target.value; queueBoardSave(state.currentBoardId); });
     titleInput.addEventListener("focus", ()=>selectNode(node.id));
+  }
+
+  const textGrid = div.querySelector(".diagram-textgrid");
+  if(textGrid){
+    const mirror = ()=>{ textGrid.dataset.v = titleInput.value; };
+    mirror();
+    titleInput.addEventListener("input", mirror);
+  }
+
+  const borderBtn = div.querySelector(".border-toggle");
+  if(borderBtn){
+    borderBtn.addEventListener("pointerdown", e=>e.stopPropagation());
+    borderBtn.addEventListener("click",()=>{
+      node.border = node.border===false;
+      div.classList.toggle("no-border", node.border===false);
+      queueBoardSave(state.currentBoardId);
+    });
   }
 
   /* custom-type fields */
@@ -450,7 +508,10 @@ export function nodeElement(node){
         if(!n) return;
         n.color = color;
         const nel = canvasInner.querySelector('.node[data-id="'+id+'"]');
-        if(nel && n.type!=="header" && n.type!=="image"){
+        if(nel && n.type==="shape"){
+          nel.style.setProperty("--shape-fill", themedNodeColor(color));
+          nel.querySelectorAll(".swatch").forEach(s=>s.classList.toggle("active", s.dataset.color===color));
+        } else if(nel && n.type!=="header" && n.type!=="image" && n.type!=="label"){
           nel.style.background = themedNodeColor(color);
           nel.querySelectorAll(".swatch").forEach(s=>s.classList.toggle("active", s.dataset.color===color));
         }
@@ -495,6 +556,15 @@ export function nodeElement(node){
   connHandle.addEventListener("pointerdown",(e)=>{
     e.stopPropagation();
     startConnectDrag(node.id, null, node.x+node.w, node.y+node.h/2);
+  });
+
+  div.querySelectorAll(".side-dot").forEach(dot=>{
+    dot.addEventListener("pointerdown",(e)=>{
+      e.stopPropagation();
+      const side = dot.dataset.side;
+      const p = sidePoint(node, side);
+      startConnectDrag(node.id, null, p.x, p.y, side);
+    });
   });
 
   return div;

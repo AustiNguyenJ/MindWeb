@@ -70,7 +70,11 @@ describe.skipIf(onBaseline)("rich text holding > < & without any tag", () => {
     });
     importFile(dump);
     await waitFor(() => app.$("#toast").textContent === "Imported", { label: "import to finish" });
-    app.click(app.pages()[1]);
+    // the import landed in a notebook of its own, which the sidebar only shows
+    // once it is chosen in the switcher
+    app.click(app.$("#nbSwitchBtn"));
+    app.click(app.$$("#swTree .sw-nb")[1]);
+    app.click(app.$(".board-item"));
 
     const body = [...app.$$(".node.type-note .cf-rich")].find((b) => b.textContent.includes("second"));
     expect(body.innerHTML).toBe("a &gt; b<br>second &amp; line");

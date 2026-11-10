@@ -2,7 +2,11 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { createApp, tick, DEFAULT_ENTRY } from "./harness.js";
 
 // the confirm modal and page multi-select are new, app-only behavior --
-// the untouched original used window.confirm() and had no multi-select
+// the untouched original used window.confirm() and had no multi-select.
+// The app's sidebar also shows one notebook at a time where the original shows
+// the whole nested tree, so tests that reach into more than one notebook keep
+// their original body for the baseline and have a focus-view body for the app
+// (the focus view itself is covered in sidebarFocus.test.js).
 const onBaseline = DEFAULT_ENTRY.includes("original");
 
 let app;
@@ -14,6 +18,20 @@ const menuFor = (pageId) => {
   return app.$("#pageMenu");
 };
 const pageIdAt = (i) => app.$$(".board-item")[i].dataset.id;
+
+// app only: a second notebook is a sub-notebook of the one in view, named
+// through its inline rename box
+function addSubNotebook(name) {
+  app.click(app.$("#newNotebookBtn"));
+  const input = app.$(".sub-name input");
+  if (name) input.value = name;
+  input.dispatchEvent(new app.window.Event("blur"));
+}
+// click a notebook's menu button (a row's, or the breadcrumb's), then one of its items
+const openMenuFor = (selector, act) => {
+  app.click(app.$(selector));
+  return act ? app.click(app.$(`#notebookMenu [data-act="${act}"]`)) : app.$("#notebookMenu");
+};
 
 // jsdom has neither DataTransfer nor DragEvent, so drags are simulated with a
 // plain Event carrying a minimal fake dataTransfer -- enough fidelity for
@@ -55,6 +73,19 @@ const cancelDelete = async () => { app.click(app.$("#confirmCancelBtn")); await 
 
 describe("notebooks", () => {
   it("adds a notebook and drops straight into renaming it", () => {
+    if (!onBaseline) {
+      // the new notebook is a sub-notebook of the one in view, renamed in its row
+      app.click(app.$("#newNotebookBtn"));
+      expect(app.$$(".sub-row")).toHaveLength(1);
+
+      const input = app.$(".sub-name input");
+      expect(input).toBeTruthy();
+      input.value = "Operations";
+      input.dispatchEvent(new app.window.Event("blur"));
+
+      expect(app.notebookNames()).toEqual(["My Notebook", "Operations"]);
+      return;
+    }
     app.click(app.$("#newNotebookBtn"));
     expect(app.$$(".nb")).toHaveLength(2);
 
@@ -66,7 +97,9 @@ describe("notebooks", () => {
     expect(app.notebookNames()).toEqual(["My Notebook", "Operations"]);
   });
 
-  it("collapses and expands on a header click", () => {
+  // a collapsed/expanded tree is the original's; the focus view replaces it
+  // with drilling into a notebook (sidebarFocus.test.js)
+  it.skipIf(!onBaseline)("collapses and expands on a header click", () => {
     const head = app.$(".nb-head");
     app.click(head);
     expect(app.$(".nb").classList.contains("collapsed")).toBe(true);
@@ -75,6 +108,14 @@ describe("notebooks", () => {
   });
 
   it("adds a page into the notebook whose + was clicked", () => {
+    if (!onBaseline) {
+      // "New page here" on the sub-notebook's row: the page is made there, opened, and the view follows
+      addSubNotebook();
+      openMenuFor(".sub-menu-btn", "newPage");
+      expect(app.$$(".board-item")).toHaveLength(1);
+      expect(app.$("#nbCrumbs .crumb.current").textContent).toBe("New Notebook");
+      return;
+    }
     app.click(app.$("#newNotebookBtn"));
     app.$(".nb-name input").dispatchEvent(new app.window.Event("blur"));
 
@@ -83,6 +124,15 @@ describe("notebooks", () => {
   });
 
   it("renames from the pencil button", () => {
+    if (!onBaseline) {
+      // the notebook in view is renamed from the menu beside its breadcrumb
+      openMenuFor(".crumb-menu", "rename");
+      const input = app.$(".crumb.current input");
+      input.value = "Renamed";
+      input.dispatchEvent(new app.window.Event("blur"));
+      expect(app.notebookNames()).toEqual(["Renamed"]);
+      return;
+    }
     app.click(app.$(".nb-rename"));
     const input = app.$(".nb-name input");
     input.value = "Renamed";
@@ -91,33 +141,39 @@ describe("notebooks", () => {
   });
 
   it("refuses to delete the last remaining notebook", () => {
+    if (!onBaseline) {
+      openMenuFor(".crumb-menu", "del");
+      expect(app.$("#toast").textContent).toBe("Keep at least one notebook");
+      expect(app.notebookNames()).toHaveLength(1);
+      return;
+    }
     app.click(app.$(".nb-del-btn"));
     expect(app.$("#toast").textContent).toBe("Keep at least one notebook");
     expect(app.$$(".nb")).toHaveLength(1);
   });
 
   it.skipIf(onBaseline)("moves orphaned pages to another notebook when one is deleted", async () => {
-    app.click(app.$("#newNotebookBtn"));
-    app.$(".nb-name input").dispatchEvent(new app.window.Event("blur"));
-    app.click(app.$$(".nb-add-page")[1]);
-    expect(app.$$(".board-item")).toHaveLength(2);
+    addSubNotebook();
+    openMenuFor(".sub-menu-btn", "newPage");   // a page inside it; the view moves in with it
+    expect(app.$$(".board-item")).toHaveLength(1);
 
-    app.click(app.$$(".nb-del-btn")[1]);
+    openMenuFor(".crumb-menu", "del");         // delete the notebook being viewed
     expect(app.$("#confirmOverlay").classList.contains("open")).toBe(true);
     await confirmDelete();
 
-    expect(app.$$(".nb")).toHaveLength(1);
+    expect(app.notebookNames()).toEqual(["My Notebook"]);
+    expect(app.$("#nbCrumbs .crumb.current").textContent).toBe("My Notebook");   // the view moved up
     expect(app.$$(".board-item")).toHaveLength(2); // both pages survived
   });
 
   it.skipIf(onBaseline)("keeps the notebook if the delete is cancelled", async () => {
-    app.click(app.$("#newNotebookBtn"));
-    app.$(".nb-name input").dispatchEvent(new app.window.Event("blur"));
-    expect(app.$$(".nb")).toHaveLength(2);
+    addSubNotebook();
+    expect(app.notebookNames()).toHaveLength(2);
 
-    app.click(app.$$(".nb-del-btn")[1]);
+    openMenuFor(".sub-menu-btn", "del");
     await cancelDelete();
-    expect(app.$$(".nb")).toHaveLength(2);
+    expect(app.notebookNames()).toHaveLength(2);
+    expect(app.$$(".sub-row")).toHaveLength(1);
   });
 });
 
@@ -243,7 +299,10 @@ describe("the page context menu", () => {
   it("offers open, pin, rename, duplicate and delete", () => {
     const menu = menuFor(pageIdAt(0));
     const labels = [...menu.querySelectorAll(".pm-item")].map((b) => b.textContent);
-    expect(labels).toEqual(["Open", "Pin to top", "Rename", "Duplicate page", "Delete page"]);
+    // "Move to…" is how a page reaches a notebook that isn't on screen
+    expect(labels).toEqual(onBaseline
+      ? ["Open", "Pin to top", "Rename", "Duplicate page", "Delete page"]
+      : ["Open", "Pin to top", "Rename", "Duplicate page", "Move to…", "Delete page"]);
   });
 
   it("opens on right-click too", () => {
@@ -286,8 +345,9 @@ describe("the page context menu", () => {
 });
 
 describe.skipIf(onBaseline)("the notebook context menu", () => {
+  // the notebook in view has no row of its own: its menu hangs off its breadcrumb
   const openNotebookMenu = () => {
-    app.$(".nb-head").dispatchEvent(
+    app.$(".crumb.current").dispatchEvent(
       new app.window.MouseEvent("contextmenu", { bubbles: true, cancelable: true })
     );
     return app.$("#notebookMenu");
@@ -297,22 +357,22 @@ describe.skipIf(onBaseline)("the notebook context menu", () => {
     const menu = openNotebookMenu();
     expect(menu).toBeTruthy();
     const labels = [...menu.querySelectorAll(".pm-item")].map((b) => b.textContent);
-    expect(labels).toEqual(["New page here", "New sub-notebook here", "Rename", "Delete notebook"]);
+    expect(labels).toEqual(["New page here", "New sub-notebook here", "Rename", "Move to…", "Delete notebook"]);
   });
 
   it("deletes the notebook through the same confirm-modal flow", async () => {
-    app.click(app.$("#newNotebookBtn"));
-    app.$(".nb-name input").dispatchEvent(new app.window.Event("blur"));
-    expect(app.$$(".nb")).toHaveLength(2);
+    addSubNotebook();
+    expect(app.notebookNames()).toHaveLength(2);
 
-    app.$$(".nb-head")[1].dispatchEvent(
+    app.$(".sub-row").dispatchEvent(
       new app.window.MouseEvent("contextmenu", { bubbles: true, cancelable: true })
     );
     app.click(app.$("#notebookMenu").querySelector('[data-act="del"]'));
     expect(app.$("#confirmOverlay").classList.contains("open")).toBe(true);
     await confirmDelete();
 
-    expect(app.$$(".nb")).toHaveLength(1);
+    expect(app.notebookNames()).toHaveLength(1);
+    expect(app.$$(".sub-row")).toHaveLength(0);
   });
 
   it("closes an already-open page menu, and vice versa", () => {
@@ -385,9 +445,8 @@ describe.skipIf(onBaseline)("dragging a multi-selection of pages", () => {
     app.click(app.$("#newBoardBtn"));
     expect(app.pages()).toHaveLength(3);
 
-    app.click(app.$("#newNotebookBtn"));
-    app.$(".nb-name input").dispatchEvent(new app.window.Event("blur"));
-    expect(app.$$(".nb")).toHaveLength(2);
+    addSubNotebook();
+    expect(app.$$(".sub-row")).toHaveLength(1);
 
     const items = () => app.$$(".board-item");
     [0, 1, 2].forEach((i) =>
@@ -395,24 +454,26 @@ describe.skipIf(onBaseline)("dragging a multi-selection of pages", () => {
     );
     expect(app.$$(".board-item.multi-selected")).toHaveLength(3);
 
-    const targetHead = app.$$(".nb-head")[1];
-    simulateDrag(app, items()[1], targetHead);
+    // dropped on the sub-notebook's row: all three leave the list in view...
+    simulateDrag(app, items()[1], app.$(".sub-row"));
+    expect(items()).toHaveLength(0);
+    expect(app.$(".sub-count").textContent).toBe("3");
 
-    expect(app.$$(".nb")[1].querySelectorAll(".board-item")).toHaveLength(3);
-    expect(app.$$(".nb")[0].querySelectorAll(".board-item")).toHaveLength(0);
+    // ...and are all inside it
+    app.click(app.$(".sub-row"));
+    expect(items()).toHaveLength(3);
   });
 
   it("clears the multi-selection after a successful group move", () => {
     app.click(app.$("#newBoardBtn"));
     app.click(app.$("#newBoardBtn"));
-    app.click(app.$("#newNotebookBtn"));
-    app.$(".nb-name input").dispatchEvent(new app.window.Event("blur"));
+    addSubNotebook();
 
     const items = () => app.$$(".board-item");
     [0, 1, 2].forEach((i) =>
       items()[i].dispatchEvent(new app.window.MouseEvent("click", { bubbles: true, ctrlKey: true }))
     );
-    simulateDrag(app, items()[1], app.$$(".nb-head")[1]);
+    simulateDrag(app, items()[1], app.$(".sub-row"));
 
     expect(app.$$(".board-item.multi-selected")).toHaveLength(0);
     expect(app.$("#multiSelectBar").style.display).toBe("none");
@@ -439,16 +500,23 @@ describe.skipIf(onBaseline)("dragging a multi-selection of pages", () => {
   });
 
   it("shows a toast instead of nesting a notebook into its own descendant", () => {
-    app.click(app.$(".nb-add-sub"));
-    app.$(".nb-name input").dispatchEvent(new app.window.Event("blur"));
-    expect(app.$$(".nb-head")).toHaveLength(2);
+    // A parent and its child are never both rows in the same level, so a drag
+    // can't reach this case any more; "Move to…" is the way in. It greys the
+    // descendant out, and the move itself still refuses if that were bypassed.
+    addSubNotebook("Child");
+    app.click(app.$(".sub-row"));                       // view Child
+    addSubNotebook("Grandchild");
+    app.click(app.$$("#nbCrumbs .crumb")[0]);           // back to the top notebook
+    openMenuFor(".sub-menu-btn", "move");               // Child's menu -> Move to…
 
-    const parentHead = app.$$(".nb-head")[0];
-    const childHead = app.$$(".nb-head")[1];
-    simulateDrag(app, parentHead, childHead);
+    const grandchild = [...app.$$("#moveToPicker .sw-nb")].find((b) => b.textContent.startsWith("Grandchild"));
+    expect(grandchild.disabled).toBe(true);
+    grandchild.disabled = false;
+    app.click(grandchild);
 
     expect(app.$("#toast").textContent).toBe("Can't move a notebook into one of its own sub-notebooks");
-    // the nesting never happened: still two separate heads, parent unmoved
-    expect(app.$$(".nb-head")).toHaveLength(2);
+    // the nesting never happened: Child is still a row here, Grandchild still under it
+    expect(app.$$(".sub-row .sub-name").map((n) => n.textContent)).toEqual(["Child"]);
+    expect(app.notebookNames()).toEqual(["My Notebook", "Child", "Grandchild"]);
   });
 });

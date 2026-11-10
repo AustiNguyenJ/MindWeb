@@ -7,6 +7,7 @@ import { el, viewport, canvasInner } from "./dom.js";
 /* ---------- view ---------- */
 export function applyTransform(){
   canvasInner.style.transform = "translate("+state.view.x+"px,"+state.view.y+"px) scale("+state.view.scale+")";
+  canvasInner.style.setProperty("--zoom", String(state.view.scale));
   el("zoomPct").textContent = Math.round(state.view.scale*100)+"%";
 }
 

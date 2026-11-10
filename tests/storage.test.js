@@ -66,7 +66,9 @@ describe("import", () => {
     const dump = await exportJson(app);
     importFile(app, dump);
     await waitFor(() => app.$("#toast").textContent === "Imported", { label: "import to finish" });
-    expect(app.pages()).toHaveLength(2);
+    // asked of the data, not the sidebar: an import brings its own notebook,
+    // and the sidebar lists one notebook at a time
+    expect((await exportJson(app)).boards).toHaveLength(2);
   });
 
   it("round-trips a page's blocks", async () => {
@@ -76,7 +78,7 @@ describe("import", () => {
 
     const dump = await exportJson(app);
     importFile(app, dump);
-    await waitFor(() => app.pages().length === 2, { label: "imported page" });
+    await waitFor(() => app.$("#toast").textContent === "Imported", { label: "import to finish" });
 
     const after = await exportJson(app);
     const copies = after.boards.filter((b) => b.nodes.some((n) => n.title === "Kept through import"));

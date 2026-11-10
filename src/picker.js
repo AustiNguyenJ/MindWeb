@@ -87,7 +87,7 @@ export function commitPicker(){
   const node = createNode(choice.type, pt.x+80, pt.y, {silent:true});
   const label = fromItemLabel(from);
   if(label && choice.type!=="image") node.title = label;
-  createConnection(from.fromId, from.fromItem, node.id, null);
+  createConnection(from.fromId, from.fromItem, node.id, null, { fromSide:from.fromSide });
   renderBoard();
   focusNodeTitle(node.id);
 }

@@ -11,12 +11,14 @@ import { allHotkeyEntries, imageHotkey } from "./toolbarConfig.js";
 const STATIC_SECTIONS = [
   { id:"notebooks", title:"Notebooks & pages", html:
     '<h3>Notebooks &amp; pages</h3>' +
-    '<p>Pages live inside notebooks, like OneNote. Click a notebook to collapse it, the <b>+</b> on its row to add a page, the pencil to rename, the <b>×</b> to delete. <b>+ Notebook</b> adds a new one.</p>' +
-    '<p><b>Reorder</b> pages by dragging them up or down; drag onto another notebook to move them there. Right-click a page (or use its <b>⋯</b> button) to <b>pin</b> it to the top, rename, <b>duplicate the whole page</b>, or delete. Pinned pages show a star and can still be reordered among themselves.</p>'
+    '<p>Pages live inside notebooks, and notebooks can hold other notebooks. The sidebar shows one notebook at a time: the path to it along the top (click any part to go back up), then its sub-notebooks as rows (click one to go in) and its pages. Going in or out only changes what the sidebar shows — it never opens a page — and the sidebar follows you back to a page’s notebook whenever you open one from elsewhere.</p>' +
+    '<p>The notebook button at the top opens the switcher: every notebook as a tree, to jump anywhere, plus <b>+ New top-level notebook</b>. <b>+ Notebook</b> adds a sub-notebook to the one you’re viewing, and <b>+ New page</b> adds a page to it. The <b>⋯</b> beside the path (or right-click it) is that notebook’s menu: new page, new sub-notebook, rename, <b>Move to…</b>, delete. Sub-notebook rows have the same menu.</p>' +
+    '<p>The <b>Filter pages</b> box narrows the list as you type, looking through this notebook and everything inside it; <kbd>Esc</kbd> clears it. (To search inside blocks, use Search.)</p>' +
+    '<p><b>Reorder</b> pages by dragging them up or down; drop a page on a sub-notebook row, or on a notebook in the path above, to move it there — or use <b>Move to…</b> in its menu to send it to any notebook. Right-click a page (or use its <b>⋯</b> button) to <b>pin</b> it to the top, rename, <b>duplicate the whole page</b>, or delete. Pinned pages show a star and can still be reordered among themselves. <kbd>Ctrl</kbd>/<kbd>Shift</kbd>-click selects several pages to move or delete together.</p>'
   },
   { id:"favorites", title:"Favorites", html:
     '<h3>Favorites</h3>' +
-    '<p>Pinned pages also collect in a Favorites strip at the top of the sidebar, pulling together starred pages from every notebook for quick access. It only appears once you’ve pinned something, and collapses to a single row if you want it out of the way.</p>'
+    '<p>Pinned pages from every notebook are gathered at the top of the notebook switcher (the notebook button in the sidebar) for quick access; picking one opens it and shows its notebook. The list only appears once you’ve pinned something, and its heading folds it away.</p>'
   },
   { id:"copy-pages", title:"Copy between pages", html:
     '<h3>Copy between pages</h3>' +
@@ -54,7 +56,16 @@ const STATIC_SECTIONS = [
     '<p>Drag the dot on a box’s edge onto another box.</p>' +
     '<p>Drop on <b>empty canvas</b> to open a picker — type to filter, <kbd>Enter</kbd> picks the top match, and the new box appears already connected.</p>' +
     '<p>Each <b>list item</b> has its own dot, so you can branch a hierarchy off any line.</p>' +
-    '<p>Double-click a line to label it.</p>'
+    '<p>Double-click a line to label it: type right where the label sits, <kbd>Enter</kbd> keeps it, <kbd>Esc</kbd> cancels.</p>' +
+    '<p>Click a line to select it and a small bar appears beside it: <b>straight, elbow or curve</b>, an arrowhead at either end, <b>solid, dashed or dotted</b>, colour, thickness, a label button and delete. <kbd>Esc</kbd> closes it.</p>' +
+    '<p>Hover a box to see a dot on each <b>side</b>. Drag from one to leave from exactly that side, or drop a line on one to arrive there. With a line selected, drag either round end onto a side dot to move it; drop it on its own box to let it choose again. Lines to and from a single list row always use that row.</p>' +
+    '<p>A line between two flowchart shapes starts as an elbow.</p>'
+  },
+  { id:"flowcharts", title:"Flowcharts", html:
+    '<h3>Flowcharts</h3>' +
+    '<p>The <b>Shapes</b> group on the toolbar adds rectangles, rounded boxes, ellipses, diamonds (decisions), parallelograms (input/output) and terminators (start/end), plus a plain <b>text label</b> with no box around it. Click the group’s name to fold it away; the toolbar remembers that on this device.</p>' +
+    '<p>Type straight into a shape or label. Select a shape for its colour swatches, and use the <b>▣</b> button that appears above it to switch its outline on or off. Drag the corner handle to resize. Arrows attach to the real outline of a shape, not its bounding box.</p>' +
+    '<p>Each shape and the label have their own hotkey, listed under <b>Spawn at cursor</b> and editable in <b>Toolbar settings</b>.</p>'
   },
   { id:"canvas", title:"Canvas", html:
     '<h3>Canvas</h3>' +

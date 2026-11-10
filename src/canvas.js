@@ -4,10 +4,11 @@ import { getData, findNode } from "./boards.js";
 import { clientToCanvas, zoomAt, centerView, applyTransform } from "./view.js";
 import { applySelectionClasses, deselectAll } from "./selection.js";
 import { hiddenNodeIds } from "./collapse.js";
-import { createConnection, updateConnectionsTouching, renderConnLabelsAndDelete } from "./connections.js";
+import { createConnection, updateConnectionsTouching, renderConnLabelsAndDelete, connGeometry } from "./connections.js";
+import { setConnStyle } from "./connStyle.js";
 import { groupKey } from "./rows.js";
 import { isCustomType } from "./blockTypes.js";
-import { measureListOffsets, fitCanvasBounds } from "./render.js";
+import { measureListOffsets, fitCanvasBounds, renderBoard } from "./render.js";
 import { openNodePicker } from "./picker.js";
 import { queueBoardSave } from "./storage.js";
 
@@ -81,7 +82,9 @@ export function endConnectDrag(clientX, clientY){
     if(listRowEl && listRowEl.closest(".node")===nodeEl) toItem = parseInt(listRowEl.dataset.idx,10);
     else if(tickRowEl && tickRowEl.closest(".node")===nodeEl) toItem = parseInt(tickRowEl.dataset.idx,10);
     else if(groupRowEl && groupRowEl.closest(".node")===nodeEl) toItem = groupKey(groupRowEl.dataset.gk, parseInt(groupRowEl.dataset.ri,10));
-    createConnection(from.fromId, from.fromItem, nodeEl.dataset.id, toItem);
+    const dotEl = target.closest(".side-dot");
+    const toSide = dotEl && dotEl.closest(".node")===nodeEl ? dotEl.dataset.side : null;
+    createConnection(from.fromId, from.fromItem, nodeEl.dataset.id, toItem, { fromSide:from.fromSide, toSide });
     state.dragState = null;
   } else if(!nodeEl){
     // dropped on empty canvas: open a searchable picker to choose the block type
@@ -100,8 +103,7 @@ export function cleanupConnectVisuals(){
   if(linkTipEl){ linkTipEl.remove(); linkTipEl = null; }
 }
 
-export function startConnectDrag(fromId, fromItem, startX, startY){
-  state.dragState = { mode:"connect", fromId, fromItem };
+function beginLinkVisuals(startX, startY, tip){
   viewport.classList.add("linking");
   const line = document.createElementNS("http://www.w3.org/2000/svg","line");
   line.id="tempConnLine";
@@ -111,8 +113,50 @@ export function startConnectDrag(fromId, fromItem, startX, startY){
   connSvg.appendChild(line);
   linkTipEl = document.createElement("div");
   linkTipEl.className = "link-tip";
-  linkTipEl.innerHTML = 'Drop on a box to link \u00b7 drop on empty space to pick a block';
+  linkTipEl.innerHTML = tip;
   document.body.appendChild(linkTipEl);
+}
+
+/* `fromSide`, when the drag started from one of a block's side dots, pins the
+   new connection's start to that side. */
+export function startConnectDrag(fromId, fromItem, startX, startY, fromSide){
+  state.dragState = { mode:"connect", fromId, fromItem, fromSide };
+  beginLinkVisuals(startX, startY, 'Drop on a box to link \u00b7 drop on empty space to pick a block');
+}
+
+/* Dragging one end of the selected connection. Dropped on a side dot it pins
+   that end to the side (of that block, which may be a different one from
+   before); dropped on its own block's body it goes back to automatic; dropped
+   anywhere else nothing changes. `fromId` is the block at the end that stays
+   put, so the drag can never produce a link from a block to itself. */
+export function startReconnectDrag(connId, end){
+  const conn = getData().connections.find(c=>c.id===connId);
+  const g = conn && connGeometry(conn);
+  if(!g) return;
+  const fixed = end==="from" ? g.p2 : g.p1;
+  state.dragState = { mode:"reconnect", connId, end, fromId:end==="from" ? conn.to : conn.from };
+  beginLinkVisuals(fixed.x, fixed.y, 'Drop on a side dot to pin that side \u00b7 drop on the same box to unpin');
+}
+
+export function endReconnectDrag(clientX, clientY){
+  const drag = state.dragState;
+  cleanupConnectVisuals();
+  state.dragState = null;
+  const conn = getData().connections.find(c=>c.id===drag.connId);
+  const target = document.elementFromPoint(clientX, clientY);
+  const nodeEl = target ? target.closest(".node") : null;
+  if(!conn || !nodeEl || nodeEl.dataset.id===drag.fromId) return;
+  const dotEl = target.closest(".side-dot");
+  if(dotEl && dotEl.closest(".node")===nodeEl){
+    conn[drag.end] = nodeEl.dataset.id;
+    conn[drag.end+"Item"] = null;
+    setConnStyle(conn, { [drag.end+"Side"]: dotEl.dataset.side });
+  } else if(nodeEl.dataset.id===conn[drag.end]){
+    setConnStyle(conn, { [drag.end+"Side"]: null });
+  } else {
+    return;
+  }
+  renderBoard(); queueBoardSave(state.currentBoardId);
 }
 
 /* Zoom controls, and the pointer gestures on the canvas. */
@@ -127,6 +171,15 @@ export function initCanvas(){
   },{passive:false});
 
   viewport.addEventListener("pointermove",(e)=>{ state.cursorCanvas = clientToCanvas(e.clientX,e.clientY); });
+
+  /* the round handles on the ends of the selected connection */
+  canvasInner.addEventListener("pointerdown",(e)=>{
+    if(e.button!==0) return;
+    const handle = e.target.closest(".conn-end");
+    if(!handle) return;
+    e.stopPropagation();
+    startReconnectDrag(handle.dataset.conn, handle.dataset.end);
+  });
 
   /* right button anywhere on the canvas = rubber-band select.
      Registered in the capture phase so it wins even over a box. */
@@ -182,22 +235,25 @@ export function initCanvas(){
         m.node.x = m.ox+dx; m.node.y = m.oy+dy;
         m.el.style.left = m.node.x+"px";
         m.el.style.top = m.node.y+"px";
-        updateConnectionsTouching(m.node.id);
       });
+      // once, after every block has moved, so a connection between two of
+      // them is redrawn a single time per step
+      updateConnectionsTouching(state.dragState.moving.map(m=>m.node.id));
       fitCanvasBounds();
     } else if(state.dragState.mode==="resize"){
       const dx=(e.clientX-state.dragState.startX)/state.view.scale, dy=(e.clientY-state.dragState.startY)/state.view.scale;
-      state.dragState.node.w = Math.max(150, state.dragState.ow+dx);
+      const diagram = state.dragState.node.type==="shape" || state.dragState.node.type==="label";
+      state.dragState.node.w = Math.max(diagram ? 60 : 150, state.dragState.ow+dx);
       state.dragState.el.style.width = state.dragState.node.w+"px";
-      const autoH = (state.dragState.node.type==="list" || state.dragState.node.type==="ticket" || state.dragState.node.type==="week" || isCustomType(state.dragState.node.type));
+      const autoH = (state.dragState.node.type==="list" || state.dragState.node.type==="ticket" || state.dragState.node.type==="week" || state.dragState.node.type==="label" || isCustomType(state.dragState.node.type));
       if(!autoH){
-        state.dragState.node.h = Math.max(50, state.dragState.oh+dy);
+        state.dragState.node.h = Math.max(state.dragState.node.type==="shape" ? 36 : 50, state.dragState.oh+dy);
         state.dragState.el.style.height = state.dragState.node.h+"px";
       } else {
         state.dragState.node.h = state.dragState.el.offsetHeight;
       }
       updateConnectionsTouching(state.dragState.node.id);
-    } else if(state.dragState.mode==="connect"){
+    } else if(state.dragState.mode==="connect" || state.dragState.mode==="reconnect"){
       const c = clientToCanvas(e.clientX,e.clientY);
       state.cursorCanvas = c;
       const line = el("tempConnLine");
@@ -217,7 +273,7 @@ export function initCanvas(){
     }
     if(state.dragState.mode==="drag"){
       measureListOffsets();
-      state.dragState.moving.forEach(m=>updateConnectionsTouching(m.node.id));
+      updateConnectionsTouching(state.dragState.moving.map(m=>m.node.id));
       queueBoardSave(state.currentBoardId);
     }
     if(state.dragState.mode==="resize"){
@@ -227,6 +283,10 @@ export function initCanvas(){
     }
     if(state.dragState.mode==="connect"){
       endConnectDrag(e.clientX, e.clientY);
+      return;
+    }
+    if(state.dragState.mode==="reconnect"){
+      endReconnectDrag(e.clientX, e.clientY);
       return;
     }
     state.dragState = null;

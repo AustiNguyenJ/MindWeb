@@ -10,8 +10,26 @@ import {
   duplicatePage,
 } from "./sidebar.js";
 import { closeNotebookMenu } from "./notebookMenu.js";
+import { openMoveToPicker } from "./notebookSwitcher.js";
 
 /* The right-click / overflow menu on a page in the sidebar. */
+
+/* Keyboard for a popup list of buttons (the page and notebook menus, the
+   "Move to..." picker): focus lands on the first entry, and Up/Down walk
+   them, wrapping. */
+export function enableMenuKeys(menu, itemSelector = ".pm-item"){
+  const items = ()=>[...menu.querySelectorAll(itemSelector)];
+  menu.addEventListener("keydown",(e)=>{
+    if(e.key!=="ArrowDown" && e.key!=="ArrowUp") return;
+    const list = items();
+    if(!list.length) return;
+    e.preventDefault();
+    const i = list.indexOf(document.activeElement);
+    list[e.key==="ArrowDown" ? (i+1)%list.length : (i-1+list.length)%list.length].focus();
+  });
+  const first = items()[0];
+  if(first) first.focus();
+}
 
 /* ---------- page context menu ---------- */
 export function closePageMenu(){
@@ -36,6 +54,7 @@ export function openPageMenu(pageId, x, y){
     { act:"pin",   label:b.pinned ? "Unpin from top" : "Pin to top" },
     { act:"rename",label:"Rename" },
     { act:"dupe",  label:"Duplicate page" },
+    { act:"move",  label:"Move to…" },
     { act:"sep" },
     { act:"del",   label:"Delete page", danger:true }
   ];
@@ -63,8 +82,10 @@ export function openPageMenu(pageId, x, y){
         if(itemEl) startRenameBoard(pageId, itemEl);
       }
       else if(act==="dupe") duplicatePage(pageId);
+      else if(act==="move") openMoveToPicker("page", pageId, x, y);
       else if(act==="del") deleteBoard(pageId);
     });
   });
+  enableMenuKeys(menu);
   setTimeout(()=>document.addEventListener("pointerdown", pageMenuOutside, true), 0);
 }

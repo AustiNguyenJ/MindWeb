@@ -1,7 +1,8 @@
 import { el } from "./dom.js";
 import { state } from "./state.js";
 import { escapeHtml } from "./util.js";
-import { closePageMenu } from "./pageMenu.js";
+import { closePageMenu, enableMenuKeys } from "./pageMenu.js";
+import { openMoveToPicker } from "./notebookSwitcher.js";
 import {
   newBoard,
   newNotebook,
@@ -9,7 +10,8 @@ import {
   deleteNotebook,
 } from "./sidebar.js";
 
-/* The right-click menu on a notebook in the sidebar. Mirrors pageMenu.js. */
+/* The menu on a notebook in the sidebar: a sub-notebook row, or the notebook
+   being viewed (the last breadcrumb). Mirrors pageMenu.js. */
 
 /* ---------- notebook context menu ---------- */
 export function closeNotebookMenu(){
@@ -34,6 +36,7 @@ export function openNotebookMenu(notebookId, x, y){
     { act:"newSub",  label:"New sub-notebook here" },
     { act:"sep" },
     { act:"rename",  label:"Rename" },
+    { act:"move",    label:"Move to…" },
     { act:"sep" },
     { act:"del",     label:"Delete notebook", danger:true }
   ];
@@ -56,8 +59,10 @@ export function openNotebookMenu(notebookId, x, y){
       if(act==="newPage") newBoard(notebookId);
       else if(act==="newSub") newNotebook(notebookId);
       else if(act==="rename") startRenameNotebook(notebookId);
+      else if(act==="move") openMoveToPicker("notebook", notebookId, x, y);
       else if(act==="del") deleteNotebook(notebookId);
     });
   });
+  enableMenuKeys(menu);
   setTimeout(()=>document.addEventListener("pointerdown", notebookMenuOutside, true), 0);
 }

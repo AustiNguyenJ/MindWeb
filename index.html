@@ -34,24 +34,40 @@
       <span>Search</span><kbd>⇧F</kbd>
     </button>
     <div id="listWrap" style="flex:1;display:flex;flex-direction:column;min-height:0;">
+      <div class="nb-nav">
+        <div class="nb-switch-wrap">
+          <button type="button" class="nb-switch-btn" id="nbSwitchBtn" aria-haspopup="true" aria-expanded="false" aria-controls="nbSwitchPanel" title="Switch notebook">
+            <svg class="nb-switch-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H19v15H5.5A1.5 1.5 0 0 0 4 20.5z"/><path d="M4 20.5A1.5 1.5 0 0 1 5.5 19H19"/></svg>
+            <span class="nb-switch-label" id="nbSwitchLabel">Notebooks</span>
+            <svg class="nb-switch-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m6 9 6 6 6-6"/></svg>
+          </button>
+          <div class="nb-switch-panel" id="nbSwitchPanel" role="dialog" aria-label="Notebooks and favorites" hidden>
+            <div id="favWrap" style="display:none;">
+              <div class="fav-head" id="favHead" tabindex="0" title="Your pinned pages, across every notebook">
+                <svg class="fav-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m6 9 6 6 6-6"/></svg>
+                <span class="fav-star">★</span>
+                <span class="fav-label">Favorites</span>
+                <span class="fav-count" id="favCount">0</span>
+              </div>
+              <div id="favList"></div>
+              <div class="fav-divider"></div>
+            </div>
+            <div class="sw-label">All notebooks</div>
+            <div class="sw-tree" id="swTree"></div>
+            <button type="button" class="sw-new-top" id="swNewTopBtn" title="Create a notebook at the top level">+ New top-level notebook</button>
+          </div>
+        </div>
+        <button class="nb-add-nb" id="newNotebookBtn" title="New sub-notebook here">+ Notebook</button>
+      </div>
+      <div class="nb-crumbs" id="nbCrumbs" role="navigation" aria-label="Notebook path"></div>
+      <div class="page-filter">
+        <input type="text" id="pageFilter" placeholder="Filter pages…" autocomplete="off" spellcheck="false" aria-label="Filter pages in this notebook">
+        <button type="button" class="page-filter-clear" id="pageFilterClear" title="Clear filter" aria-label="Clear filter" hidden>×</button>
+      </div>
       <div class="multiselect-bar" id="multiSelectBar" style="display:none;">
         <span id="multiSelectCount"></span>
         <button type="button" id="multiSelectDeleteBtn">Delete</button>
         <button type="button" id="multiSelectClearBtn">Cancel</button>
-      </div>
-      <div id="favWrap" style="display:none;">
-        <div class="fav-head" id="favHead" title="Your pinned pages, across every notebook">
-          <svg class="fav-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m6 9 6 6 6-6"/></svg>
-          <span class="fav-star">★</span>
-          <span class="fav-label">Favorites</span>
-          <span class="fav-count" id="favCount">0</span>
-        </div>
-        <div id="favList"></div>
-        <div class="fav-divider"></div>
-      </div>
-      <div class="nb-toolbar">
-        <span class="section-label">Notebooks</span>
-        <button class="nb-add-nb" id="newNotebookBtn" title="New notebook">+ Notebook</button>
       </div>
       <div id="notebookTree"></div>
     </div>
@@ -71,10 +87,26 @@
       </button>
     </div>
     <div id="toolbar">
-      <span id="builtinToolbarBtns" style="display:flex;gap:8px;flex-wrap:wrap;"></span>
-      <button class="add-btn" id="addImageBtn"><span class="swab" style="background:#bfdbfe"></span>Image<span class="key">G</span></button>
+      <div class="tb-section" data-section="blocks">
+        <button type="button" class="tb-sec-head" aria-expanded="true" title="Show or hide the block buttons">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m6 9 6 6 6-6"/></svg>Blocks
+        </button>
+        <div class="tb-sec-body">
+          <span id="builtinToolbarBtns" style="display:flex;gap:8px;flex-wrap:wrap;"></span>
+          <button class="add-btn" id="addImageBtn"><span class="swab" style="background:#bfdbfe"></span>Image<span class="key">G</span></button>
+          <div class="toolbar-sep"></div>
+          <span id="customTypeBtns" style="display:flex;gap:8px;flex-wrap:wrap;"></span>
+        </div>
+      </div>
+      <div class="tb-section" data-section="shapes">
+        <button type="button" class="tb-sec-head" aria-expanded="true" title="Show or hide the shape buttons">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m6 9 6 6 6-6"/></svg>Shapes
+        </button>
+        <div class="tb-sec-body">
+          <span id="shapeToolbarBtns" style="display:flex;gap:8px;flex-wrap:wrap;"></span>
+        </div>
+      </div>
       <div class="toolbar-sep"></div>
-      <span id="customTypeBtns" style="display:flex;gap:8px;flex-wrap:wrap;"></span>
       <button class="add-btn" id="designBlocksBtn" title="Create and edit block types"><span class="swab" style="background:#c9a6ff"></span>Design blocks</button>
       <button class="add-btn" id="toolbarSettingsBtn" title="Choose which blocks show on the toolbar and their hotkeys"><span class="swab" style="background:#9aa1ab"></span>Toolbar settings</button>
       <div class="toolbar-sep"></div>
