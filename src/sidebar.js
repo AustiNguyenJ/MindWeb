@@ -11,6 +11,7 @@ import { historyReset } from "./history.js";
 import { queueIndexSave, persistDeleteBoard, persistDeleteNotebook, saveBoardNow } from "./storage.js";
 import { confirmModal } from "./confirmModal.js";
 import { renderQuickAccessToolbar } from "./toolbar.js";
+import { isBoardReady, ensureBoardLoaded, rememberBoard } from "./pageLoader.js";
 
 /* The sidebar: notebooks (which can nest other notebooks), the pages inside
    them, favourites, and the page header. Pages are ordered pinned-first and
@@ -496,8 +497,24 @@ export function startRenameBoard(id, itemEl){
   input.addEventListener("click",e=>e.stopPropagation());
 }
 
+/* The page the user last asked for. A page still being fetched opens when it
+   arrives -- unless they have clicked somewhere else in the meantime. */
+let wantedBoardId = null;
+
 export function switchBoard(id){
   if(id===state.currentBoardId) return;
+  if(!isBoardReady(id)){
+    wantedBoardId = id;
+    const b = state.boards.find(x=>x.id===id);
+    showToast("Loading “"+((b && b.name) || "page")+"”…");
+    ensureBoardLoaded(id).then(ok=>{
+      if(wantedBoardId!==id) return;
+      if(ok) switchBoard(id);
+      else showToast("Couldn't load that page — try again");
+    });
+    return;
+  }
+  wantedBoardId = null;
   state.currentBoardId = id; state.selection.clear(); state.selectedConnId=null;
   renderBoardList(); renderBoardHeader(); centerView(); renderBoard();
   historyReset(id);
@@ -538,11 +555,17 @@ async function deleteBoards(ids){
     const b = state.boards.find(x=>x.id===id);
     if(b) affectedNotebooks.add(b.notebookId);
     delete state.boardsData[id];
+    state.pendingBoards.delete(id); state.failedBoards.delete(id);
     persistDeleteBoard(id);
   });
   state.boards = state.boards.filter(b=>!idSet.has(b.id));
   affectedNotebooks.forEach(nbId=>{ if(nbId) renumberNotebook(nbId); });
-  if(idSet.has(state.currentBoardId)) state.currentBoardId = state.boards[0].id;
+  if(idSet.has(state.currentBoardId)){
+    // land on a page that is actually loaded, fetching one if need be
+    const next = state.boards.find(b=>isBoardReady(b.id)) || state.boards[0];
+    if(!isBoardReady(next.id)) await ensureBoardLoaded(next.id);
+    state.currentBoardId = next.id;
+  }
   selectedBoardIds.clear();
   lastClickedBoardId = null;
   renderBoardList(); renderBoardHeader(); centerView(); renderBoard(); queueIndexSave();
@@ -562,6 +585,7 @@ export function deleteBoard(id){
 export function duplicatePage(id){
   const src = state.boards.find(b=>b.id===id);
   if(!src) return;
+  if(!isBoardReady(id)){ showToast("That page is still loading — try again in a moment"); return; }
   const data = state.boardsData[id] || {nodes:[], connections:[]};
   const idMap = {};
   const newNodes = (data.nodes||[]).map(n=>{
@@ -588,6 +612,7 @@ export function duplicatePage(id){
 }
 
 export function renderBoardHeader(){
+  rememberBoard(state.currentBoardId);   // what to open first next time
   const b = getBoard();
   el("boardTitle").value = b.name || "";
   el("boardDesc").value = b.description || "";

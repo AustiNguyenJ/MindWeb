@@ -7,6 +7,7 @@ import { queueTypesSave, persistIndex, persistBoard } from "./storage.js";
 import { migrateNode } from "./nodes.js";
 import { renderBoardList } from "./sidebar.js";
 import { renderTypeToolbar } from "./designer.js";
+import { pendingCount, whenAllLoaded } from "./pageLoader.js";
 
 /* The single-file backup format: one JSON bundle carrying notebooks, pages,
    their blocks and connections, and the block-type library. Import adds
@@ -14,7 +15,15 @@ import { renderTypeToolbar } from "./designer.js";
    an imported page can never collide with an existing one. */
 
 /* ---------- export / import ---------- */
-export function exportAll(){
+export async function exportAll(){
+  // a backup missing the pages that hadn't arrived yet would be a silent loss
+  if(pendingCount()){
+    showToast("Finishing loading your pages before exporting…");
+    if(!(await whenAllLoaded())){
+      alert("Some pages couldn't be loaded, so the export would be incomplete. Try again in a moment.");
+      return;
+    }
+  }
   const payload = {
     version:2, exported:new Date().toISOString(),
     blockTypes: state.customTypes,

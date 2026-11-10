@@ -89,7 +89,8 @@ async function loadAll(){
     return;
   }
   ensureNotebookStructure();
-  for(const b of state.boards){
+  // pages are independent, so read them together rather than one by one
+  const loaded = await Promise.all(state.boards.map(async b=>{
     let d = {nodes:[],connections:[]};
     try{
       if(state.backend==="folder"){
@@ -106,8 +107,9 @@ async function loadAll(){
     }catch(err){ state.corruptBoards.add(b.id); d = {nodes:[],connections:[]}; }
     d.nodes = (d.nodes||[]).map(migrateNode);
     d.connections = d.connections||[];
-    state.boardsData[b.id] = d;
-  }
+    return { id:b.id, d };
+  }));
+  loaded.forEach(({id, d})=>{ state.boardsData[id] = d; });
   state.currentBoardId = state.boards[0].id;
   if(state.corruptBoards.size) notifyCorrupt();
 }

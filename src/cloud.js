@@ -11,6 +11,11 @@ import { renderBoard } from "./render.js";
 import { renderBoardList, renderBoardHeader } from "./sidebar.js";
 import { renderTypeToolbar } from "./designer.js";
 import { normalizeToolbarConfig } from "./toolbarConfig.js";
+import { reconstructMissingTypes } from "./blockTypes.js";
+import {
+  setPending, loadBoards, startBackgroundLoad, onLoadProgress,
+  recallBoard, backgroundOrder, pendingCount,
+} from "./pageLoader.js";
 
 /* Supabase: client construction, the email magic-link sign-in flow, the
    sidebar's cloud status bar, and the cloud storage backend.
@@ -432,6 +437,46 @@ if(state.supabaseClient){
 
 function cloudUserId(){ return (state.supabaseSession && state.supabaseSession.user) ? state.supabaseSession.user.id : null; }
 
+/* PostgREST caps a response at 1000 rows, and a batch of pages can hold more
+   blocks than that. A silently truncated page would look complete and then
+   have its missing blocks deleted by the next save, so page through. */
+async function fetchRowsForBoards(table, boardIds){
+  const PAGE = 1000;
+  const rows = [];
+  for(let from=0; ; from+=PAGE){
+    const { data, error } = await state.supabaseClient.from(table).select("*")
+      .in("board_id", boardIds).order("id").range(from, from+PAGE-1);
+    if(error) throw error;
+    rows.push(...data);
+    if(data.length < PAGE) return rows;
+  }
+}
+
+/* The pageLoader's backend hook: blocks and connections for several pages in
+   two (paged) queries instead of two per page. Throws on any error so the
+   whole batch stays pending rather than appearing empty. */
+async function cloudFetchBoards(ids){
+  const [nodeRows, connRows] = await Promise.all([
+    fetchRowsForBoards("nodes", ids), fetchRowsForBoards("connections", ids)
+  ]);
+  const out = {};
+  ids.forEach(id=>{ out[id] = { nodes:[], connections:[] }; });
+  nodeRows.forEach(r=>{
+    const { fields, extras } = splitBuiltinExtras(r.fields);
+    out[r.board_id].nodes.push(migrateNode({
+      id:r.id, type:r.type, x:r.x, y:r.y, w:r.w, h:r.h, title:r.title||"",
+      body:r.body||"", bodyHtml:r.body_html||"", color:r.color||"#ffffff",
+      fields, collapsed:!!r.collapsed, ...extras
+    }));
+  });
+  connRows.forEach(r=>{
+    out[r.board_id].connections.push({
+      id:r.id, from:r.from_node, fromItem:r.from_item, to:r.to_node, toItem:r.to_item, label:r.label
+    });
+  });
+  return out;
+}
+
 /* Pull everything the signed-in user can see out of Supabase and rebuild
    notebooks / boards / boardsData / customTypes in the shape the rest of
    the app already expects. Returns false (and touches nothing) if the
@@ -470,27 +515,21 @@ async function cloudReadAll(){
     }
   }catch(err){ console.warn("[mindmap] couldn't load toolbar config from cloud", err); }
 
+  // Only the page about to be shown is fetched here; the rest are marked
+  // pending and filled in by connectCloud() once the app has drawn. The page
+  // list above already came back in one query, so the sidebar is complete.
   state.boardsData = {};
-  for(const b of state.boards){
-    const [{data:nodeRows, error:nErr}, {data:connRows, error:cErr}] = await Promise.all([
-      state.supabaseClient.from("nodes").select("*").eq("board_id", b.id),
-      state.supabaseClient.from("connections").select("*").eq("board_id", b.id)
-    ]);
-    if(nErr || cErr){ console.error("[mindmap] cloud board read failed", b.id, nErr||cErr); state.boardsData[b.id]={nodes:[],connections:[]}; continue; }
-    state.boardsData[b.id] = {
-      nodes: (nodeRows||[]).map(r=>{
-        const { fields, extras } = splitBuiltinExtras(r.fields);
-        return migrateNode({
-          id:r.id, type:r.type, x:r.x, y:r.y, w:r.w, h:r.h, title:r.title||"",
-          body:r.body||"", bodyHtml:r.body_html||"", color:r.color||"#ffffff",
-          fields, collapsed:!!r.collapsed, ...extras
-        });
-      }),
-      connections: (connRows||[]).map(r=>({
-        id:r.id, from:r.from_node, fromItem:r.from_item, to:r.to_node, toItem:r.to_item, label:r.label
-      }))
-    };
+  const remembered = recallBoard();
+  const first = state.boards.find(b=>b.id===remembered) || state.boards[0];
+  setPending(state.boards.map(b=>b.id), cloudFetchBoards);
+  await loadBoards([first.id]);
+  if(state.pendingBoards.has(first.id)){
+    // nothing usable yet: undo the half-built state so a retry starts clean
+    state.boards = []; state.notebooks = []; state.boardsData = {};
+    state.pendingBoards = new Set(); state.failedBoards = new Set();
+    throw new Error("couldn't load the first page");   // connectCloud reports it
   }
+  state.currentBoardId = first.id;
   ensureNotebookStructure();
   return true;
 }
@@ -620,8 +659,7 @@ export async function connectCloud(){
   try{
     const found = await cloudReadAll();
     if(found){
-      state.backend = "cloud";
-      state.currentBoardId = state.boards[0].id;
+      state.backend = "cloud";      // cloudReadAll() already chose the open page
       showToast("Loaded from cloud");
     } else {
       await cloudPersistIndex();
@@ -634,6 +672,15 @@ export async function connectCloud(){
     renderBoardList(); renderBoardHeader(); centerView(); renderBoard();
     renderTypeToolbar(); historyReset(state.currentBoardId); updateStorageBar();
     markCloudConnectSettled();
+    // the app is drawn; now bring in everything else behind it
+    if(pendingCount()){
+      onLoadProgress(updateStorageBar);
+      startBackgroundLoad(backgroundOrder(state.currentBoardId), ()=>{
+        reconstructMissingTypes();   // may now see blocks it could not before
+        if(pendingCount()) showToast(pendingCount()+" page(s) couldn't be loaded — they'll retry when opened");
+        updateStorageBar();
+      });
+    }
   }catch(err){
     console.error("[mindmap] cloud connect failed", err);
     showToast("Couldn't connect to cloud \u2014 see console");

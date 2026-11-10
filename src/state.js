@@ -47,6 +47,12 @@ export const state = {
   corruptBoards: new Set(),
   corruptPrompted: new Set(),
 
+  /* Staged loading, see pageLoader.js. A pending page's blocks have not
+     arrived yet; it is never saved. bgLoad drives the footer progress. */
+  pendingBoards: new Set(),
+  failedBoards: new Set(),
+  bgLoad: { active:false, total:0, done:0 },
+
   // --- cloud --------------------------------------------------------------
   supabaseClient: null,
   supabaseSession: null,

@@ -7,6 +7,7 @@ import { applyTransform } from "./view.js";
 import { renderBoard } from "./render.js";
 import { historyReset } from "./history.js";
 import { renderBoardList, renderBoardHeader } from "./sidebar.js";
+import { pendingCount } from "./pageLoader.js";
 
 /* Search across notebooks, scoped to everything, one notebook, or one page.
  *
@@ -127,8 +128,12 @@ export function runSearch(){
       }
     });
   });
+  // pages still arriving can't be searched yet -- say so rather than imply "no match"
+  const loadingNote = pendingCount()
+    ? '<div class="sm-hint">Still loading '+pendingCount()+' page'+(pendingCount()===1?"":"s")+' — results may be incomplete.</div>'
+    : '';
   if(!results.length){
-    host.innerHTML = '<div class="no-results">No matches for \u201c'+escapeHtml(q)+'\u201d in this scope.</div>';
+    host.innerHTML = '<div class="no-results">No matches for \u201c'+escapeHtml(q)+'\u201d in this scope.</div>'+loadingNote;
     return;
   }
   host.innerHTML = results.map((r,i)=>
@@ -136,7 +141,7 @@ export function runSearch(){
       '<div class="result-board">'+escapeHtml(r.boardName)+(r.notebookName?'<span class="rb-nb">\u00b7 '+escapeHtml(r.notebookName)+'</span>':'')+'</div>' +
       '<div class="result-title">'+highlight(r.title, q)+'</div>' +
       '<div class="result-snippet">'+highlight(r.snippet, q)+'</div>' +
-    '</div>').join('');
+    '</div>').join('') + loadingNote;
   host.querySelectorAll(".result-item").forEach(item=>{
     item.addEventListener("click", ()=>{ closeSearch(); goToNode(item.dataset.board, item.dataset.node); });
   });

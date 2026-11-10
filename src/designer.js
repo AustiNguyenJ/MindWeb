@@ -11,6 +11,7 @@ import { viewportCenterCanvasCoords } from "./view.js";
 import { renderBoard } from "./render.js";
 import { queueTypesSave } from "./storage.js";
 import { confirmModal } from "./confirmModal.js";
+import { pendingCount, whenAllLoaded } from "./pageLoader.js";
 import { renderQuickAccessToolbar } from "./toolbar.js";
 
 /* The Block Designer: define a block type as a list of fields, with a live
@@ -120,7 +121,9 @@ export function newType(){
 
 export async function deleteType(id){
   if(state.customTypes[id] && state.customTypes[id].builtin){ showToast("Built-in blocks can't be deleted"); return; }
-  const inUse = getData().nodes.some(n=>n.type===id) ||
+  // "is any block using this type?" has to see every page, not just the loaded ones
+  const everyPageSeen = pendingCount() ? await whenAllLoaded() : true;
+  const inUse = !everyPageSeen || getData().nodes.some(n=>n.type===id) ||
     state.boards.some(b=>(state.boardsData[b.id]||{nodes:[]}).nodes.some(n=>n.type===id));
   const msg = inUse
     ? "Blocks already placed with it will keep their data but show as plain. This can't be undone."

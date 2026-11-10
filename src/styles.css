@@ -32,6 +32,10 @@
   .footer-bar.ok .sb-dot{background:#2f9e5f;}
   .footer-bar.warn .sb-dot{background:#d99a2b;}
   .footer-spacer{flex:1;}
+  .footer-load{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10.5px;color:var(--muted-2);}
+  .footer-load[hidden]{display:none;}
+  .fl-bar{width:70px;height:4px;border-radius:2px;background:var(--line);overflow:hidden;}
+  .fl-fill{display:block;height:100%;width:0;background:#2f9e5f;transition:width .25s;}
   #footerSaved{font-family:var(--mono);font-size:10.5px;color:var(--muted-2);}
   #footerSaveBtn{font-family:var(--body);font-size:11px;color:var(--muted);background:var(--surface);
     border:1px solid var(--line);border-radius:5px;padding:2px 8px;cursor:pointer;}

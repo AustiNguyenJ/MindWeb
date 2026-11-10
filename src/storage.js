@@ -12,6 +12,7 @@ import {
   cloudSaveToolbarConfig,
 } from "./cloud.js";
 import { recordChange } from "./history.js";
+import { isBoardReady } from "./pageLoader.js";
 import { centerView } from "./view.js";
 import { migrateNode } from "./nodes.js";
 import { renderBoard } from "./render.js";
@@ -202,6 +203,9 @@ export async function persistBoard(id){
     showToast("Not saving this page \u2014 its file couldn't be read (protected)");
     return;
   }
+  // a page whose blocks haven't arrived is "empty" only because we haven't
+  // looked yet; saving it would delete the real ones (see pageLoader.js)
+  if(!isBoardReady(id)) return;
   try{
     if(state.backend==="folder"){ await fsWrite(boardFileName(id), boardPayload(id)); await fsWrite("index.json", indexPayload()); showToast("Saved to folder"); }
     else if(state.backend==="cloud"){ await cloudPersistBoard(id); await cloudPersistIndex(); showToast("Saved to cloud"); }
@@ -314,15 +318,18 @@ export async function readFromFolder(){
   state.notebooks = Array.isArray(idx.notebooks) ? idx.notebooks.slice() : [];
   ensureNotebookStructure();
   state.boardsData = {};
-  for(const b of state.boards){
+  // files are independent, so read them together rather than one by one
+  const loaded = await Promise.all(state.boards.map(async b=>{
     const txt = await fsRead(boardFileName(b.id));
-    const res = parseBoardText(txt);
+    return { b, res: parseBoardText(txt) };
+  }));
+  loaded.forEach(({b, res})=>{
     if(!res.ok){ state.corruptBoards.add(b.id); console.warn("Board file unreadable, protecting it from overwrite:", boardFileName(b.id)); }
     const d = res.data;
     d.nodes = (d.nodes||[]).map(migrateNode);
     d.connections = d.connections||[];
     state.boardsData[b.id] = d;
-  }
+  });
   state.currentBoardId = state.boards[0].id;
   if(state.corruptBoards.size) notifyCorrupt();
   return true;
@@ -414,6 +421,16 @@ export function updateStorageBar(){
   const foot = el("footerBar");
   if(!foot) return;
   let cls = info.cls, label = info.label;
+  const load = el("footerLoad");
+  if(load){
+    const bg = state.bgLoad;
+    const busy = bg.active && state.pendingBoards.size > 0;
+    load.hidden = !busy;
+    if(busy){
+      load.querySelector(".fl-text").textContent = "Loading pages "+bg.done+" / "+bg.total;
+      load.querySelector(".fl-fill").style.width = (bg.total ? Math.round(100*bg.done/bg.total) : 0)+"%";
+    }
+  }
   if(state.saveStatus==="error"){ cls="warn"; label="Save failed — see console"; }
   else if(state.saveStatus==="pending"){ cls="warn"; label="Unsaved changes…"; }
   foot.className = "footer-bar "+cls;

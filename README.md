@@ -160,6 +160,7 @@ reference/        the pre-refactor single file, kept for A/B testing
 | `boards.js` | Document model: notebooks, pages, page ordering |
 | `blockTypes.js` | The block-type library, and `fieldVal`/`setFieldVal` |
 | `storage.js` `cloud.js` `exportImport.js` | The four backends, Supabase, backup files |
+| `pageLoader.js` | Staged loading: open page first, the rest in the background; pending pages are never saved |
 | `nodes.js` `rows.js` `connections.js` `collapse.js` | Blocks, their rows, the arrows, subtree folding |
 | `selection.js` `view.js` `history.js` | Selection, pan/zoom, undo/redo |
 | `customFields.js` `nodeElement.js` `render.js` | Schema-driven fields, one block's DOM, drawing the page |
